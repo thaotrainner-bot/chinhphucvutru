@@ -1,0 +1,2428 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Chiến Binh Không Gian - Buồng Lái Chiến Thuật Widescreen</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:ital,wght@0,400;0,500;0,600;0,700;0,800;1,500&family=Chakra+Petch:ital,wght@0,600;0,700;0,800;1,700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --font-display: 'Chakra Petch', 'Be Vietnam Pro', sans-serif;
+            --font-body: 'Be Vietnam Pro', sans-serif;
+        }
+
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100vw;
+            height: 100vh;
+            background-color: #030613;
+            color: #f8fafc;
+            font-family: var(--font-body);
+            overflow: hidden;
+            touch-action: none;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .font-display {
+            font-family: var(--font-display);
+        }
+
+        /* Bố cục Buồng Lái Ngang 2 Khung (Landscape Tablet & Laptop Cockpit) */
+        #cockpit-wrapper {
+            display: flex;
+            flex-direction: row;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            background: radial-gradient(circle at 65% 50%, #09122c 0%, #030612 100%);
+        }
+
+        /* Cột Chỉ Huy Bên Trái (Command Sidebar) */
+        #command-sidebar {
+            width: 320px;
+            min-width: 280px;
+            max-width: 340px;
+            height: 100vh;
+            background: linear-gradient(180deg, rgba(8, 15, 36, 0.98) 0%, rgba(5, 9, 22, 0.99) 100%);
+            border-right: 2px solid rgba(0, 243, 255, 0.28);
+            box-shadow: 6px 0 28px rgba(0, 0, 0, 0.75), inset -1px 0 12px rgba(0, 243, 255, 0.08);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 10px 12px;
+            z-index: 30;
+            overflow-y: auto;
+            scrollbar-width: thin;
+            scrollbar-color: #0284c7 #080f24;
+        }
+
+        /* Tự động thu gọn vừa vặn nếu màn hình nhỏ nhưng vẫn giữ nguyên 2 khung ngang */
+        @media (max-width: 760px) {
+            #command-sidebar {
+                width: 235px;
+                min-width: 215px;
+                padding: 6px 8px;
+            }
+        }
+
+        /* Chiến Trường Không Gian Chiều Ngang Bên Phải */
+        #battlefield-stage {
+            flex: 1;
+            position: relative;
+            height: 100vh;
+            overflow: hidden;
+            background: #02040a;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Card chọn nhanh Chiến Cơ & Đạn */
+        .tactical-card {
+            background: rgba(15, 23, 42, 0.75);
+            border: 1.5px solid rgba(56, 189, 248, 0.22);
+            border-radius: 8px;
+            transition: all 0.16s ease;
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+        }
+        .tactical-card:hover {
+            border-color: rgba(0, 243, 255, 0.65);
+            background: rgba(14, 34, 64, 0.85);
+            transform: translateY(-1px);
+        }
+        .tactical-card.active {
+            background: linear-gradient(135deg, rgba(6, 78, 119, 0.65) 0%, rgba(15, 23, 42, 0.92) 100%);
+            border-color: #00f3ff;
+            box-shadow: 0 0 12px rgba(0, 243, 255, 0.35), inset 0 0 8px rgba(0, 243, 255, 0.18);
+        }
+
+        .ammo-card.active {
+            background: linear-gradient(135deg, rgba(120, 53, 15, 0.65) 0%, rgba(24, 24, 38, 0.95) 100%);
+            border-color: #fbbf24;
+            box-shadow: 0 0 12px rgba(251, 191, 36, 0.35), inset 0 0 8px rgba(251, 191, 36, 0.18);
+        }
+
+        /* Thanh máu và tiến trình */
+        .bar-track {
+            width: 100%;
+            background: rgba(15, 23, 42, 0.9);
+            border: 1.5px solid rgba(148, 163, 184, 0.35);
+            border-radius: 999px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        /* Overlay Màn Hình Chờ / Xưởng Chiến Cơ 2 Cột Ngang */
+        .stage-overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(3, 7, 19, 0.86);
+            backdrop-filter: blur(6px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 18px;
+            z-index: 40;
+        }
+
+        .hidden-overlay {
+            display: none !important;
+        }
+
+        .cyber-btn {
+            font-family: var(--font-display);
+            font-weight: 800;
+            letter-spacing: 0.8px;
+            text-transform: uppercase;
+            border-radius: 8px;
+            transition: all 0.18s ease;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
+
+        .cyber-btn-primary {
+            background: linear-gradient(90deg, #06b6d4 0%, #2563eb 100%);
+            color: #ffffff;
+            border: 1.5px solid #67e8f9;
+            box-shadow: 0 0 18px rgba(6, 182, 212, 0.45);
+        }
+        .cyber-btn-primary:hover {
+            transform: scale(1.03);
+            box-shadow: 0 0 26px rgba(6, 182, 212, 0.85);
+            filter: brightness(1.1);
+        }
+
+        .cyber-btn-secondary {
+            background: rgba(15, 23, 42, 0.85);
+            color: #38bdf8;
+            border: 1.5px solid rgba(56, 189, 248, 0.45);
+        }
+        .cyber-btn-secondary:hover {
+            background: rgba(30, 41, 59, 0.95);
+            border-color: #00f3ff;
+            color: #ffffff;
+        }
+
+        /* Cảnh báo giữa màn hình chiến trường */
+        #center-banner {
+            position: absolute;
+            top: 42%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-family: var(--font-display);
+            text-align: center;
+            z-index: 25;
+            pointer-events: none;
+            display: none;
+            width: 88%;
+        }
+
+        /* Custom Range Slider */
+        input[type=range].cyber-slider {
+            -webkit-appearance: none;
+            width: 100%;
+            height: 8px;
+            background: #1e293b;
+            border-radius: 6px;
+            border: 1px solid #38bdf8;
+            outline: none;
+        }
+        input[type=range].cyber-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #00f3ff;
+            box-shadow: 0 0 10px #00f3ff;
+            cursor: pointer;
+            border: 2px solid #ffffff;
+        }
+    </style>
+</head>
+<body>
+
+<div id="cockpit-wrapper">
+    <!-- ==================== 1. CỘT CHỈ HUY BÊN TRÁI (COMMAND SIDEBAR - LUÔN HIỂN THỊ) ==================== -->
+    <aside id="command-sidebar">
+        <!-- Header & Trạng thái trận đấu -->
+        <div>
+            <div class="flex items-center justify-between border-b border-cyan-500/30 pb-1.5 mb-2">
+                <div class="flex items-center gap-1.5">
+                    <span class="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_8px_#22d3ee]"></span>
+                    <h2 class="font-display font-extrabold text-sm tracking-wider text-cyan-300 uppercase">BUỒNG LÁI CHỈ HUY</h2>
+                </div>
+                <span id="sidebar-state-badge" class="text-[10px] font-display font-bold px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-400/30">SẴN SÀNG</span>
+            </div>
+
+            <!-- Điểm số, Kỷ lục, Cấp độ -->
+            <div class="grid grid-cols-3 gap-1.5 mb-2">
+                <div class="bg-slate-900/90 border border-slate-700/80 rounded-lg p-1.5 text-center">
+                    <div class="text-[10px] text-slate-400 font-semibold">ĐIỂM SỐ</div>
+                    <div id="hud-score" class="font-display font-extrabold text-sm text-cyan-300 truncate">0</div>
+                </div>
+                <div class="bg-slate-900/90 border border-slate-700/80 rounded-lg p-1.5 text-center">
+                    <div class="text-[10px] text-slate-400 font-semibold">KỶ LỤC</div>
+                    <div id="hud-highscore" class="font-display font-extrabold text-sm text-amber-300 truncate">0</div>
+                </div>
+                <div class="bg-slate-900/90 border border-slate-700/80 rounded-lg p-1.5 text-center">
+                    <div class="text-[10px] text-slate-400 font-semibold">CẤP ĐỘ</div>
+                    <div id="hud-level" class="font-display font-extrabold text-sm text-emerald-300">1 / 10</div>
+                </div>
+            </div>
+
+            <!-- Thanh Máu HP & Khiên Bảo Vệ -->
+            <div class="bg-slate-900/80 border border-slate-800 rounded-lg p-2 mb-2">
+                <div class="flex justify-between items-center text-xs mb-1">
+                    <span class="font-bold text-emerald-300 flex items-center gap-1">
+                        <span>❤️ NĂNG LƯỢNG (HP)</span>
+                    </span>
+                    <span id="hud-hp-text" class="font-display font-bold text-white">100 / 100</span>
+                </div>
+                <div class="bar-track h-3 mb-2">
+                    <div id="hud-hp-bar" class="h-full bg-gradient-to-r from-emerald-400 to-cyan-400 transition-all duration-150 shadow-[0_0_10px_#10b981]" style="width: 100%;"></div>
+                </div>
+
+                <!-- Khiên & Tiến trình diệt địch gọi Boss -->
+                <div class="flex items-center justify-between text-[11px] pt-1 border-t border-slate-800/90">
+                    <div class="flex items-center gap-1.5">
+                        <span class="text-slate-400">KHIÊN:</span>
+                        <span id="hud-shield-badge" class="font-display font-bold px-1.5 py-0.5 rounded text-[10px] bg-slate-800 text-slate-400 border border-slate-700">CHƯA BẬT</span>
+                    </div>
+                    <div class="text-right">
+                        <span class="text-slate-400">TIẾN ĐỘ TRÙM:</span>
+                        <span id="hud-wave-text" class="font-display font-bold text-amber-300 ml-1">0/14</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 4 Ô Chọn Nhanh Chiến Cơ (Aircraft Quick-Select) -->
+        <div class="my-1">
+            <div class="flex items-center justify-between mb-1">
+                <span class="text-[11px] font-display font-bold text-cyan-300 uppercase tracking-wider">✈️ 4 CHIẾN CƠ (ĐỔI TRỰC TIẾP)</span>
+                <span id="active-ship-label" class="text-[10px] text-sky-300 font-semibold">Chim Ưng</span>
+            </div>
+            <div class="grid grid-cols-2 gap-1.5" id="sidebar-ship-grid">
+                <!-- Populated dynamically by JS -->
+            </div>
+        </div>
+
+        <!-- 4 Ô Chọn Nhanh Loại Đạn (Ammo Quick-Select Keys 1-4) -->
+        <div class="my-1">
+            <div class="flex items-center justify-between mb-1">
+                <span class="text-[11px] font-display font-bold text-amber-300 uppercase tracking-wider">🔥 4 LOẠI ĐẠN (PHÍM 1–4)</span>
+                <div class="flex items-center gap-1">
+                    <button id="tier-minus-btn" title="Giảm cấp đạn" class="w-5 h-5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-600 text-xs font-bold text-cyan-300 flex items-center justify-center">-</button>
+                    <span id="hud-weapon-tier" class="text-[11px] font-display font-extrabold text-yellow-300 px-1">CẤP 1/10</span>
+                    <button id="tier-plus-btn" title="Tăng cấp đạn" class="w-5 h-5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-600 text-xs font-bold text-cyan-300 flex items-center justify-center">+</button>
+                </div>
+            </div>
+            <div class="grid grid-cols-2 gap-1.5" id="sidebar-ammo-grid">
+                <!-- Populated dynamically by JS -->
+            </div>
+        </div>
+
+        <!-- Nút điều khiển nhanh dưới cùng -->
+        <div class="pt-1.5 border-t border-slate-800 flex flex-col gap-1.5">
+            <button id="open-hangar-btn" class="cyber-btn cyber-btn-secondary w-full py-1.5 text-xs">
+                <span>⚙️ XƯỞNG CHIẾN CƠ & CÀI ĐẶT (H)</span>
+            </button>
+            <div class="grid grid-cols-2 gap-1.5">
+                <button id="pause-btn" class="cyber-btn cyber-btn-secondary py-1.5 text-xs">
+                    <span id="pause-btn-text">⏸️ TẠM DỪNG (P)</span>
+                </button>
+                <button id="quick-restart-btn" class="cyber-btn cyber-btn-secondary py-1.5 text-xs text-rose-300 border-rose-500/40 hover:border-rose-400">
+                    <span>🔄 CHƠI LẠI</span>
+                </button>
+            </div>
+        </div>
+    </aside>
+
+    <!-- ==================== 2. CHIẾN TRƯỜNG KHÔNG GIAN CHIỀU NGANG BÊN PHẢI ==================== -->
+    <main id="battlefield-stage">
+        <canvas id="gameCanvas"></canvas>
+
+        <!-- Thanh Máu Trùm Cuối (Boss HP Bar nổi phía trên Chiến Trường) -->
+        <div id="boss-hud-overlay" class="hidden-overlay absolute top-3 left-1/2 -translate-x-1/2 w-[82%] max-w-2xl bg-slate-950/85 border-2 border-rose-500/80 rounded-xl px-4 py-2 shadow-[0_0_25px_rgba(244,63,94,0.45)] z-20 pointer-events-none">
+            <div class="flex justify-between items-center mb-1">
+                <span id="boss-title-text" class="font-display font-extrabold text-sm md:text-base text-rose-400 tracking-wider uppercase drop-shadow">🐔 GÀ CHÚA VŨ TRỤ - CẤP 1</span>
+                <span id="boss-hp-numbers" class="font-display font-bold text-xs text-amber-300">550 / 550 HP</span>
+            </div>
+            <div class="bar-track h-3.5 border-rose-500/60">
+                <div id="boss-hp-fill" class="h-full bg-gradient-to-r from-rose-600 via-red-500 to-amber-400 transition-all duration-100 shadow-[0_0_12px_#f43f5e]" style="width: 100%;"></div>
+            </div>
+        </div>
+
+        <!-- Gợi ý phím tắt nhanh góc trên phải -->
+        <div class="absolute top-2.5 right-3 z-10 pointer-events-none hidden lg:flex items-center gap-2 text-[11px] bg-slate-900/70 border border-slate-700/70 px-3 py-1 rounded-full text-slate-300">
+            <span>Di chuyển: <strong class="text-cyan-300">WASD / Chuột / Chạm</strong></span>
+            <span>•</span>
+            <span>Đổi đạn: <strong class="text-amber-300">Phím 1–4</strong></span>
+            <span>•</span>
+            <span>Tạm dừng: <strong class="text-emerald-300">P</strong></span>
+        </div>
+
+        <!-- Banner cảnh báo giữa màn hình -->
+        <div id="center-banner">
+            <div id="center-banner-box" class="inline-block bg-slate-950/90 border-2 border-amber-400 px-8 py-4 rounded-2xl shadow-[0_0_35px_rgba(251,191,36,0.45)]">
+                <div id="center-banner-title" class="font-display font-extrabold text-2xl md:text-3xl text-amber-300 tracking-wider uppercase">CẢNH BÁO!</div>
+                <div id="center-banner-sub" class="text-sm md:text-base text-slate-200 mt-1 font-semibold">GÀ CHÚA XUẤT HIỆN</div>
+            </div>
+        </div>
+
+        <!-- ==================== MÀN HÌNH CHỜ & XƯỞNG CHIẾN CƠ 2 CỘT NGANG ==================== -->
+        <div id="start-hangar-modal" class="stage-overlay">
+            <div class="w-full max-w-5xl max-h-[94vh] bg-slate-950/95 border-2 border-cyan-400/60 rounded-2xl shadow-[0_0_45px_rgba(0,243,255,0.25)] p-4 md:p-6 flex flex-col justify-between overflow-y-auto">
+                
+                <!-- Tiêu đề Modal -->
+                <div class="flex flex-wrap items-center justify-between border-b border-slate-800 pb-3 mb-3 gap-2">
+                    <div>
+                        <h1 class="font-display font-extrabold text-2xl md:text-3xl text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 via-sky-200 to-amber-300 tracking-wide">
+                            CHIẾN BINH KHÔNG GIAN: XƯỞNG CHIẾN CƠ & VŨ KHÍ
+                        </h1>
+                        <p class="text-xs md:text-sm text-slate-300">
+                            Thiết lập Chiến Cơ, Loại Đạn và Cấp Đạn Khởi Đầu trước hoặc ngay trong trận chiến.
+                        </p>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="text-xs bg-cyan-950 border border-cyan-500/40 text-cyan-300 px-3 py-1 rounded-full font-semibold">
+                            🖥️ Giao Diện Buồng Lái Ngang Widescreen
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Bố cục 2 Cột Ngang Cân Đối -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 my-auto">
+                    
+                    <!-- CỘT TRÁI: CHỌN 4 LOẠI MÁY BAY (XƯỞNG CHIẾN CƠ) -->
+                    <div class="bg-slate-900/75 border border-slate-800 rounded-xl p-3.5 flex flex-col justify-between">
+                        <div>
+                            <div class="flex items-center justify-between mb-2">
+                                <h3 class="font-display font-extrabold text-sm md:text-base text-cyan-300 uppercase tracking-wider">
+                                    ✈️ 1. CHỌN CHIẾN CƠ XUẤT KÍCH
+                                </h3>
+                                <span class="text-xs text-slate-400">4 Mẫu Chiến Cơ</span>
+                            </div>
+
+                            <!-- Danh sách 4 Chiến Cơ -->
+                            <div id="modal-ship-list" class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mb-3">
+                                <!-- JS Render -->
+                            </div>
+                        </div>
+
+                        <!-- Khung Xem Trước Ngoại Hình Canvas & Chỉ Số Chiến Cơ -->
+                        <div class="bg-slate-950/90 border border-cyan-500/30 rounded-xl p-3 flex items-center gap-3.5">
+                            <div class="w-24 h-24 rounded-lg bg-slate-900 border border-slate-700 flex items-center justify-center shrink-0 relative">
+                                <canvas id="shipPreviewCanvas" width="96" height="96"></canvas>
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <div id="preview-ship-name" class="font-display font-extrabold text-base text-cyan-300">Chim Ưng Ngân Hà</div>
+                                <p id="preview-ship-desc" class="text-xs text-slate-300 leading-relaxed mt-0.5">
+                                    Chiến cơ cân bằng toàn diện (100 HP, tốc độ chuẩn).
+                                </p>
+                                <div id="preview-ship-stats" class="flex flex-wrap gap-1.5 mt-2 text-[11px] font-semibold">
+                                    <!-- Badges -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- CỘT PHẢI: CHỌN 4 LOẠI ĐẠN & CẤP ĐẠN KHỞI ĐẦU (1-10) -->
+                    <div class="bg-slate-900/75 border border-slate-800 rounded-xl p-3.5 flex flex-col justify-between">
+                        <div>
+                            <div class="flex items-center justify-between mb-2">
+                                <h3 class="font-display font-extrabold text-sm md:text-base text-amber-300 uppercase tracking-wider">
+                                    🔥 2. HỆ THỐNG ĐẠN & CẤP ĐỘ KHỞI ĐẦU
+                                </h3>
+                                <span class="text-xs text-slate-400">Phím tắt 1–4</span>
+                            </div>
+
+                            <!-- Danh sách 4 Loại Đạn -->
+                            <div id="modal-ammo-list" class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mb-3">
+                                <!-- JS Render -->
+                            </div>
+                        </div>
+
+                        <!-- Tùy chỉnh Cấp Đạn Khởi Đầu (1 đến 10) -->
+                        <div class="bg-slate-950/90 border border-amber-500/30 rounded-xl p-3">
+                            <div class="flex items-center justify-between mb-1.5">
+                                <label for="start-tier-slider" class="font-display font-bold text-xs md:text-sm text-amber-300">
+                                    ⚡ TÙY CHỈNH CẤP ĐẠN KHỞI ĐẦU:
+                                </label>
+                                <span id="start-tier-value" class="font-display font-extrabold text-sm md:text-base text-yellow-300 bg-amber-500/20 border border-amber-400/50 px-2.5 py-0.5 rounded-md">
+                                    CẤP 1 / 10
+                                </span>
+                            </div>
+                            <input id="start-tier-slider" type="range" min="1" max="10" value="1" class="cyber-slider mb-2">
+                            <div class="flex justify-between text-[10px] text-slate-400 font-display font-bold">
+                                <span>CẤP 1 (Đơn)</span>
+                                <span>CẤP 3 (Ba tia)</span>
+                                <span>CẤP 5 (Tỏa 5)</span>
+                                <span>CẤP 8 (Siêu cấp)</span>
+                                <span>CẤP 10 (Tối thượng)</span>
+                            </div>
+                        </div>
+
+                        <!-- Hướng dẫn vật phẩm & điều khiển tóm tắt -->
+                        <div class="mt-2.5 bg-slate-950/60 border border-slate-800 rounded-lg p-2.5 text-xs text-slate-300 grid grid-cols-3 gap-2">
+                            <div>⚡ <strong class="text-yellow-300">(U) Nâng Đạn:</strong> Tăng cấp đạn (Tối đa 10)</div>
+                            <div>💚 <strong class="text-emerald-300">(H) Hồi Phục:</strong> Hồi HP cho chiến cơ</div>
+                            <div>🛡️ <strong class="text-cyan-300">(S) Lá Chắn:</strong> Chặn 1 đòn sát thương</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Nút Hành Động Cuối Modal -->
+                <div class="flex flex-wrap items-center justify-end gap-3 pt-3 mt-3 border-t border-slate-800">
+                    <button id="resume-from-hangar-btn" class="cyber-btn cyber-btn-secondary px-5 py-2.5 text-sm hidden">
+                        ↩️ TIẾP TỤC TRẬN ĐẤU HIỆN TẠI
+                    </button>
+                    <button id="launch-mission-btn" class="cyber-btn cyber-btn-primary px-8 py-2.5 text-base">
+                        🚀 XUẤT KÍCH CHIẾN DỊCH MỚI
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== MÀN HÌNH TẠM DỪNG (PAUSE OVERLAY) ==================== -->
+        <div id="pause-modal" class="stage-overlay hidden-overlay">
+            <div class="bg-slate-950/95 border-2 border-cyan-400 rounded-2xl p-6 max-w-md w-full text-center shadow-[0_0_40px_rgba(0,243,255,0.3)]">
+                <h2 class="font-display font-extrabold text-3xl text-cyan-300 mb-2">TẠM DỪNG TRẬN ĐẤU</h2>
+                <p class="text-sm text-slate-300 mb-6">Bạn có thể đổi Chiến Cơ hoặc Loại Đạn ngay ở Cột Chỉ Huy bên trái trước khi tiếp tục.</p>
+                <div class="flex flex-col gap-3">
+                    <button id="resume-btn" class="cyber-btn cyber-btn-primary py-3 text-base w-full">▶️ TIẾP TỤC CHIẾN ĐẤU (P)</button>
+                    <button id="pause-open-hangar-btn" class="cyber-btn cyber-btn-secondary py-2.5 text-sm w-full">⚙️ MỞ XƯỞNG CHIẾN CƠ & CÀI ĐẶT</button>
+                    <button id="pause-restart-btn" class="cyber-btn cyber-btn-secondary py-2.5 text-sm w-full text-rose-300 border-rose-500/40">🔄 CHƠI LẠI TỪ ĐẦU</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== MÀN HÌNH KẾT THÚC / CHIẾN THẮNG ==================== -->
+        <div id="end-modal" class="stage-overlay hidden-overlay">
+            <div class="bg-slate-950/95 border-2 border-cyan-400 rounded-2xl p-6 max-w-xl w-full text-center shadow-[0_0_45px_rgba(0,243,255,0.35)]">
+                <h2 id="end-title" class="font-display font-extrabold text-3xl md:text-4xl text-rose-400 mb-2">CHIẾN CƠ BỊ HẠ!</h2>
+                <p id="end-subtitle" class="text-sm md:text-base text-slate-300 mb-5">Đội quân Gà Vũ Trụ đã áp đảo phi đội của bạn.</p>
+                
+                <div class="grid grid-cols-3 gap-3 bg-slate-900/90 border border-slate-800 rounded-xl p-4 mb-6">
+                    <div>
+                        <div class="text-xs text-slate-400">TỔNG ĐIỂM</div>
+                        <div id="end-score" class="font-display font-extrabold text-xl text-cyan-300 mt-1">0</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-slate-400">KỶ LỤC CAO NHẤT</div>
+                        <div id="end-highscore" class="font-display font-extrabold text-xl text-amber-300 mt-1">0</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-slate-400">CẤP ĐỘ ĐẠT ĐƯỢC</div>
+                        <div id="end-level" class="font-display font-extrabold text-xl text-emerald-300 mt-1">1 / 10</div>
+                    </div>
+                </div>
+
+                <div class="flex flex-wrap justify-center gap-3">
+                    <button id="end-hangar-btn" class="cyber-btn cyber-btn-secondary px-5 py-3 text-sm">⚙️ ĐỔI CHIẾN CƠ & CÀI ĐẶT</button>
+                    <button id="end-restart-btn" class="cyber-btn cyber-btn-primary px-7 py-3 text-base">🚀 TÁI XUẤT KÍCH NGAY</button>
+                </div>
+            </div>
+        </div>
+
+    </main>
+</div>
+
+<script>
+    // ============================================================================
+    // 1. DỮ LIỆU XƯỞNG CHIẾN CƠ (4 LOẠI MÁY BAY) & 4 LOẠI ĐẠN
+    // ============================================================================
+    const SHIPS = {
+        falcon: {
+            id: 'falcon',
+            name: 'Chim Ưng Ngân Hà',
+            shortName: 'Chim Ưng',
+            icon: '🦅',
+            maxHp: 100,
+            speedMult: 1.0,
+            damageMult: 1.0,
+            fireRateMult: 1.0,
+            healBonus: 1.0,
+            autoShieldPerLevel: false,
+            primaryColor: '#00f3ff',
+            secondaryColor: '#0284c7',
+            desc: 'Cân bằng toàn diện (100 HP, tốc độ bay và hỏa lực tiêu chuẩn).',
+            badges: ['100 HP', 'Tốc độ 100%', 'Cân bằng']
+        },
+        phantom: {
+            id: 'phantom',
+            name: 'Bóng Ma Siêu Thanh',
+            shortName: 'Bóng Ma',
+            icon: '⚡',
+            maxHp: 100,
+            speedMult: 1.35,
+            damageMult: 1.0,
+            fireRateMult: 1.22, // +22% tốc độ bắn
+            healBonus: 1.0,
+            autoShieldPerLevel: false,
+            primaryColor: '#e879f9',
+            secondaryColor: '#9333ea',
+            desc: 'Cánh ngược tàng hình, tốc độ bay cực nhanh (+35%) và tăng +22% tốc độ bắn.',
+            badges: ['100 HP', 'Tốc độ +35%', 'Tốc bắn +22%']
+        },
+        titan: {
+            id: 'titan',
+            name: 'Pháo Đài Titan',
+            shortName: 'Titan',
+            icon: '🛡️',
+            maxHp: 160,
+            speedMult: 0.86,
+            damageMult: 1.25, // +25% sát thương
+            fireRateMult: 0.95,
+            healBonus: 1.0,
+            autoShieldPerLevel: true, // Tự động có Khiên khi xuất kích & qua màn
+            primaryColor: '#fbbf24',
+            secondaryColor: '#d97706',
+            desc: 'Giáp hạng nặng 160 HP, sát thương +25%, tự động có Lá Chắn Bảo Vệ khi xuất kích & mỗi khi qua màn.',
+            badges: ['160 HP', 'Sát thương +25%', 'Tự tạo Khiên']
+        },
+        valkyrie: {
+            id: 'valkyrie',
+            name: 'Valkyrie Ánh Sao',
+            shortName: 'Valkyrie',
+            icon: '🌟',
+            maxHp: 125,
+            speedMult: 1.08,
+            damageMult: 1.15, // +15% sát thương
+            fireRateMult: 1.12, // +12% tốc độ bắn
+            healBonus: 1.5, // +50% máu hồi phục khi nhặt (H)
+            autoShieldPerLevel: false,
+            primaryColor: '#34d399',
+            secondaryColor: '#059669',
+            desc: '125 HP, sát thương +15%, tốc độ bắn +12% và tăng +50% lượng máu hồi phục khi nhặt (H).',
+            badges: ['125 HP', 'Sát thương +15%', 'Tốc bắn +12%', 'Hồi máu +50%']
+        }
+    };
+
+    const AMMO_TYPES = {
+        1: {
+            id: 1,
+            key: '1',
+            name: 'Đạn Tia Laser',
+            shortName: '1. Tia Laser',
+            icon: '⚡',
+            color: '#00f3ff',
+            coreColor: '#ffffff',
+            speedMult: 1.18,
+            damageMult: 1.0,
+            slowEffect: false,
+            pierceCount: 1,
+            desc: 'Tốc độ cao, đường đạn chuẩn xác, cân bằng trong mọi tình huống.'
+        },
+        2: {
+            id: 2,
+            key: '2',
+            name: 'Cầu Nhiệt Plasma',
+            shortName: '2. Cầu Plasma',
+            icon: '🔥',
+            color: '#ff5500',
+            coreColor: '#fde047',
+            speedMult: 0.92,
+            damageMult: 1.35, // +35% sát thương
+            slowEffect: false,
+            pierceCount: 1,
+            desc: 'Quả cầu năng lượng nhiệt hạch cỡ lớn, tăng +35% sát thương mỗi phát.'
+        },
+        3: {
+            id: 3,
+            key: '3',
+            name: 'Sóng Băng Từ Trường',
+            shortName: '3. Sóng Băng',
+            icon: '❄️',
+            color: '#38bdf8',
+            coreColor: '#e0f2fe',
+            speedMult: 0.96,
+            damageMult: 1.05,
+            slowEffect: true, // Làm chậm gà & thiên thạch
+            pierceCount: 1,
+            desc: 'Lưỡi sóng bán nguyệt quét rộng và làm chậm 45% tốc độ bay của gà địch.'
+        },
+        4: {
+            id: 4,
+            key: '4',
+            name: 'Phi Tiêu Xuyên Phá',
+            shortName: '4. Xuyên Phá',
+            icon: '✦',
+            color: '#c084fc',
+            coreColor: '#f5d0fe',
+            speedMult: 1.12,
+            damageMult: 0.95,
+            slowEffect: false,
+            pierceCount: 4, // Xuyên qua nhiều mục tiêu
+            desc: 'Đạn sao 4 cánh xoay tròn siêu tốc xuyên thấu qua nhiều mục tiêu liên tiếp.'
+        }
+    };
+
+    // ============================================================================
+    // 2. BIẾN TRẠNG THÁI TOÀN CỤC & THAM CHIẾU DOM
+    // ============================================================================
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const stageContainer = document.getElementById('battlefield-stage');
+    const previewCanvas = document.getElementById('shipPreviewCanvas');
+    const previewCtx = previewCanvas.getContext('2d');
+
+    let GAME_WIDTH = 800;
+    let GAME_HEIGHT = 600;
+
+    let selectedShipId = 'falcon';
+    let selectedAmmoId = 1;
+    let startingWeaponTier = 1;
+
+    let gameState = 'START'; // START, PLAYING, BOSS_FIGHT, TRANSITION, PAUSED, GAMEOVER, VICTORY
+    let previousPlayState = 'PLAYING';
+    let animationId = null;
+
+    let score = 0;
+    let highScore = Number(localStorage.getItem('space_chicken_highscore_v2') || 0);
+    let currentLevel = 1;
+    const MAX_LEVEL = 10;
+    let enemiesKilled = 0;
+    let killsRequiredForBoss = 14;
+    let frameCount = 0;
+    let screenShake = 0;
+
+    // Thực thể trong game
+    let stars = [];
+    let nebulae = [];
+    let player = null;
+    let boss = null;
+    let playerBullets = [];
+    let enemyBullets = [];
+    let enemies = [];
+    let meteors = [];
+    let powerups = [];
+    let particles = [];
+    let shockwaves = [];
+    let floatingTexts = [];
+
+    // Điều khiển bàn phím & chuột / cảm ứng
+    const keys = {
+        ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false,
+        w: false, a: false, s: false, d: false,
+        W: false, A: false, S: false, D: false,
+        ' ': false
+    };
+    let isPointerActive = false;
+    let pointerX = 0;
+    let pointerY = 0;
+
+    // ============================================================================
+    // 3. KHỞI TẠO GIAO DIỆN SIDEBAR & XƯỞNG CHIẾN CƠ
+    // ============================================================================
+    function renderAllSelectors() {
+        const sidebarShipGrid = document.getElementById('sidebar-ship-grid');
+        const modalShipList = document.getElementById('modal-ship-list');
+        sidebarShipGrid.innerHTML = '';
+        modalShipList.innerHTML = '';
+
+        Object.values(SHIPS).forEach(ship => {
+            const isSelected = ship.id === selectedShipId;
+            // Card trên Sidebar
+            const sideBtn = document.createElement('button');
+            sideBtn.className = `tactical-card p-1.5 text-left flex items-center gap-1.5 ${isSelected ? 'active' : ''}`;
+            sideBtn.onclick = () => selectShip(ship.id);
+            sideBtn.innerHTML = `
+                <span class="text-base leading-none">${ship.icon}</span>
+                <div class="min-w-0 flex-1">
+                    <div class="font-display font-bold text-[11px] text-white truncate">${ship.shortName}</div>
+                    <div class="text-[9px] text-cyan-300 truncate">${ship.maxHp} HP</div>
+                </div>
+            `;
+            sidebarShipGrid.appendChild(sideBtn);
+
+            // Card trong Modal Xưởng Chiến Cơ
+            const modalCard = document.createElement('div');
+            modalCard.className = `tactical-card p-2.5 flex flex-col justify-between ${isSelected ? 'active' : ''}`;
+            modalCard.onclick = () => selectShip(ship.id);
+            modalCard.innerHTML = `
+                <div class="flex items-center justify-between">
+                    <span class="font-display font-extrabold text-xs md:text-sm text-white">${ship.icon} ${ship.name}</span>
+                    ${isSelected ? '<span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-cyan-400 text-slate-950">ĐANG CHỌN</span>' : ''}
+                </div>
+                <div class="text-[11px] text-slate-300 mt-1 line-clamp-2">${ship.desc}</div>
+            `;
+            modalShipList.appendChild(modalCard);
+        });
+
+        // Render 4 Loại Đạn
+        const sidebarAmmoGrid = document.getElementById('sidebar-ammo-grid');
+        const modalAmmoList = document.getElementById('modal-ammo-list');
+        sidebarAmmoGrid.innerHTML = '';
+        modalAmmoList.innerHTML = '';
+
+        Object.values(AMMO_TYPES).forEach(ammo => {
+            const isSelected = ammo.id === selectedAmmoId;
+            // Card trên Sidebar
+            const sideAmmo = document.createElement('button');
+            sideAmmo.className = `tactical-card ammo-card p-1.5 text-left flex items-center gap-1.5 ${isSelected ? 'active' : ''}`;
+            sideAmmo.onclick = () => selectAmmo(ammo.id);
+            sideAmmo.innerHTML = `
+                <span class="w-4 h-4 rounded bg-slate-800 border border-amber-400/50 text-[10px] font-display font-extrabold text-amber-300 flex items-center justify-center shrink-0">${ammo.key}</span>
+                <div class="min-w-0 flex-1">
+                    <div class="font-display font-bold text-[11px] text-white truncate">${ammo.name.replace('Đạn ', '')}</div>
+                </div>
+            `;
+            sidebarAmmoGrid.appendChild(sideAmmo);
+
+            // Card trong Modal
+            const modalAmmo = document.createElement('div');
+            modalAmmo.className = `tactical-card ammo-card p-2.5 flex flex-col justify-between ${isSelected ? 'active' : ''}`;
+            modalAmmo.onclick = () => selectAmmo(ammo.id);
+            modalAmmo.innerHTML = `
+                <div class="flex items-center justify-between">
+                    <span class="font-display font-extrabold text-xs md:text-sm text-amber-300">[Phím ${ammo.key}] ${ammo.icon} ${ammo.name}</span>
+                </div>
+                <div class="text-[11px] text-slate-300 mt-1">${ammo.desc}</div>
+            `;
+            modalAmmoList.appendChild(modalAmmo);
+        });
+
+        // Cập nhật thông tin khung Preview Chiến Cơ
+        const currentShip = SHIPS[selectedShipId];
+        document.getElementById('active-ship-label').textContent = currentShip.shortName;
+        document.getElementById('preview-ship-name').textContent = `${currentShip.icon} ${currentShip.name}`;
+        document.getElementById('preview-ship-desc').textContent = currentShip.desc;
+
+        const statsContainer = document.getElementById('preview-ship-stats');
+        statsContainer.innerHTML = currentShip.badges.map(b =>
+            `<span class="px-2 py-0.5 rounded bg-cyan-950 border border-cyan-500/40 text-cyan-300">${b}</span>`
+        ).join('');
+
+        drawShipPreview();
+    }
+
+    function selectShip(shipId) {
+        if (!SHIPS[shipId]) return;
+        selectedShipId = shipId;
+        if (player) {
+            player.applyShipConfig(shipId, false);
+            addFloatingText(player.x, player.y - 35, `CHIẾN CƠ: ${SHIPS[shipId].shortName.toUpperCase()}`, SHIPS[shipId].primaryColor);
+            createShockwave(player.x, player.y, SHIPS[shipId].primaryColor, 55);
+        }
+        renderAllSelectors();
+        updateHUD();
+    }
+
+    function selectAmmo(ammoId) {
+        if (!AMMO_TYPES[ammoId]) return;
+        selectedAmmoId = ammoId;
+        if (player && (gameState === 'PLAYING' || gameState === 'BOSS_FIGHT')) {
+            addFloatingText(player.x, player.y - 30, `${AMMO_TYPES[ammoId].name.toUpperCase()}`, AMMO_TYPES[ammoId].color);
+        }
+        renderAllSelectors();
+        updateHUD();
+    }
+
+    // Vẽ mẫu Chiến Cơ lên khung Preview trong Xưởng Chiến Cơ
+    function drawShipPreview() {
+        previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+        previewCtx.save();
+        previewCtx.translate(previewCanvas.width / 2, previewCanvas.height / 2 + 4);
+        drawShipHull(previewCtx, selectedShipId, 44, 52, false);
+        previewCtx.restore();
+    }
+
+    // ============================================================================
+    // 4. HÀM VẼ ĐỒ HỌA VECTOR RIÊNG CHO 4 LOẠI CHIẾN CƠ
+    // ============================================================================
+    function drawShipHull(targetCtx, shipType, w, h, hasShield) {
+        // Vòng năng lượng Khiên Bảo Vệ
+        if (hasShield) {
+            targetCtx.save();
+            targetCtx.beginPath();
+            targetCtx.arc(0, 0, w * 0.98, 0, Math.PI * 2);
+            targetCtx.strokeStyle = '#00f3ff';
+            targetCtx.lineWidth = 2.5;
+            targetCtx.shadowBlur = 14;
+            targetCtx.shadowColor = '#00f3ff';
+            targetCtx.stroke();
+            targetCtx.fillStyle = 'rgba(0, 243, 255, 0.13)';
+            targetCtx.fill();
+            targetCtx.restore();
+        }
+
+        // Lửa phản lực động cơ
+        const flame = 14 + Math.random() * 12;
+        targetCtx.save();
+        if (shipType === 'falcon') {
+            // Chim Ưng Ngân Hà: Xanh Cyan / Xanh Dương sắc nét
+            targetCtx.fillStyle = '#00f3ff';
+            targetCtx.shadowBlur = 12;
+            targetCtx.shadowColor = '#00f3ff';
+            targetCtx.beginPath();
+            targetCtx.moveTo(-10, h / 2 - 4); targetCtx.lineTo(-6, h / 2 + flame); targetCtx.lineTo(-2, h / 2 - 4);
+            targetCtx.moveTo(2, h / 2 - 4); targetCtx.lineTo(6, h / 2 + flame); targetCtx.lineTo(10, h / 2 - 4);
+            targetCtx.fill();
+            targetCtx.shadowBlur = 0;
+
+            // Cánh Chim Ưng
+            targetCtx.fillStyle = '#0284c7';
+            targetCtx.beginPath();
+            targetCtx.moveTo(0, -h / 4);
+            targetCtx.lineTo(w / 2 + 16, h / 2 - 3);
+            targetCtx.lineTo(w / 2 + 10, h / 2 + 6);
+            targetCtx.lineTo(0, h / 2 - 8);
+            targetCtx.lineTo(-w / 2 - 10, h / 2 + 6);
+            targetCtx.lineTo(-w / 2 - 16, h / 2 - 3);
+            targetCtx.closePath();
+            targetCtx.fill();
+
+            // Thân chính
+            targetCtx.fillStyle = '#f1f5f9';
+            targetCtx.beginPath();
+            targetCtx.moveTo(0, -h / 2 - 6);
+            targetCtx.lineTo(13, h / 2 - 2);
+            targetCtx.lineTo(6, h / 2 + 4);
+            targetCtx.lineTo(-6, h / 2 + 4);
+            targetCtx.lineTo(-13, h / 2 - 2);
+            targetCtx.closePath();
+            targetCtx.fill();
+
+            // Buồng lái
+            targetCtx.fillStyle = '#38bdf8';
+            targetCtx.beginPath();
+            targetCtx.ellipse(0, -h / 8, 5, 13, 0, 0, Math.PI * 2);
+            targetCtx.fill();
+
+        } else if (shipType === 'phantom') {
+            // Bóng Ma Siêu Thanh: Cánh ngược Tàng Hình màu Tím Neon
+            targetCtx.fillStyle = '#f43f5e';
+            targetCtx.shadowBlur = 14;
+            targetCtx.shadowColor = '#e879f9';
+            targetCtx.beginPath();
+            targetCtx.moveTo(-7, h / 2 - 2); targetCtx.lineTo(0, h / 2 + flame + 6); targetCtx.lineTo(7, h / 2 - 2);
+            targetCtx.fill();
+            targetCtx.shadowBlur = 0;
+
+            // Cánh quét ngược về phía trước
+            targetCtx.fillStyle = '#4c1d95';
+            targetCtx.strokeStyle = '#e879f9';
+            targetCtx.lineWidth = 1.5;
+            targetCtx.beginPath();
+            targetCtx.moveTo(0, -h / 5);
+            targetCtx.lineTo(w / 2 + 18, -h / 3);
+            targetCtx.lineTo(w / 2 + 8, h / 2);
+            targetCtx.lineTo(0, h / 2 - 6);
+            targetCtx.lineTo(-w / 2 - 8, h / 2);
+            targetCtx.lineTo(-w / 2 - 18, -h / 3);
+            targetCtx.closePath();
+            targetCtx.fill();
+            targetCtx.stroke();
+
+            // Thân kim cương tàng hình
+            targetCtx.fillStyle = '#1e1b4b';
+            targetCtx.beginPath();
+            targetCtx.moveTo(0, -h / 2 - 8);
+            targetCtx.lineTo(11, h / 4);
+            targetCtx.lineTo(0, h / 2 + 4);
+            targetCtx.lineTo(-11, h / 4);
+            targetCtx.closePath();
+            targetCtx.fill();
+
+            // Buồng lái hồng neon
+            targetCtx.fillStyle = '#f0abfc';
+            targetCtx.beginPath();
+            targetCtx.ellipse(0, -h / 7, 4, 12, 0, 0, Math.PI * 2);
+            targetCtx.fill();
+
+        } else if (shipType === 'titan') {
+            // Pháo Đài Titan: Giáp hạng nặng Vàng Kim & 2 Nòng Pháo Lớn
+            targetCtx.fillStyle = '#fb923c';
+            targetCtx.shadowBlur = 12;
+            targetCtx.shadowColor = '#f59e0b';
+            targetCtx.beginPath();
+            targetCtx.moveTo(-16, h / 2 - 2); targetCtx.lineTo(-11, h / 2 + flame); targetCtx.lineTo(-6, h / 2 - 2);
+            targetCtx.moveTo(6, h / 2 - 2); targetCtx.lineTo(11, h / 2 + flame); targetCtx.lineTo(16, h / 2 - 2);
+            targetCtx.fill();
+            targetCtx.shadowBlur = 0;
+
+            // 2 Pháo Hạng Nặng hai bên cánh
+            targetCtx.fillStyle = '#94a3b8';
+            targetCtx.fillRect(-w / 2 - 8, -h / 2 + 4, 6, 26);
+            targetCtx.fillRect(w / 2 + 2, -h / 2 + 4, 6, 26);
+
+            // Cánh bọc thép
+            targetCtx.fillStyle = '#b45309';
+            targetCtx.strokeStyle = '#fbbf24';
+            targetCtx.lineWidth = 2;
+            targetCtx.beginPath();
+            targetCtx.moveTo(-14, -h / 3);
+            targetCtx.lineTo(w / 2 + 16, 0);
+            targetCtx.lineTo(w / 2 + 14, h / 2);
+            targetCtx.lineTo(-w / 2 - 14, h / 2);
+            targetCtx.lineTo(-w / 2 - 16, 0);
+            targetCtx.lineTo(14, -h / 3);
+            targetCtx.closePath();
+            targetCtx.fill();
+            targetCtx.stroke();
+
+            // Thân Pháo Đài
+            targetCtx.fillStyle = '#f59e0b';
+            targetCtx.beginPath();
+            targetCtx.roundRect(-14, -h / 2, 28, h, 6);
+            targetCtx.fill();
+
+            // Buồng lái bọc thép
+            targetCtx.fillStyle = '#fef08a';
+            targetCtx.fillRect(-6, -h / 4, 12, 16);
+
+        } else if (shipType === 'valkyrie') {
+            // Valkyrie Ánh Sao: Lục Bảo & Vàng Trắng thanh thoát
+            targetCtx.fillStyle = '#34d399';
+            targetCtx.shadowBlur = 14;
+            targetCtx.shadowColor = '#10b981';
+            targetCtx.beginPath();
+            targetCtx.moveTo(-8, h / 2 - 4); targetCtx.lineTo(0, h / 2 + flame + 4); targetCtx.lineTo(8, h / 2 - 4);
+            targetCtx.fill();
+            targetCtx.shadowBlur = 0;
+
+            // Đôi cánh Vũ Thần Ánh Sao
+            targetCtx.fillStyle = '#059669';
+            targetCtx.strokeStyle = '#a7f3d0';
+            targetCtx.lineWidth = 1.5;
+            targetCtx.beginPath();
+            targetCtx.moveTo(0, -h / 3);
+            targetCtx.lineTo(w / 2 + 19, -h / 8);
+            targetCtx.lineTo(w / 2 + 6, h / 2 - 2);
+            targetCtx.lineTo(12, h / 3);
+            targetCtx.lineTo(-12, h / 3);
+            targetCtx.lineTo(-w / 2 - 6, h / 2 - 2);
+            targetCtx.lineTo(-w / 2 - 19, -h / 8);
+            targetCtx.closePath();
+            targetCtx.fill();
+            targetCtx.stroke();
+
+            // Thân trắng ánh kim
+            targetCtx.fillStyle = '#ecfdf5';
+            targetCtx.beginPath();
+            targetCtx.moveTo(0, -h / 2 - 7);
+            targetCtx.lineTo(12, h / 2 - 4);
+            targetCtx.lineTo(0, h / 2 + 5);
+            targetCtx.lineTo(-12, h / 2 - 4);
+            targetCtx.closePath();
+            targetCtx.fill();
+
+            // Ngọc năng lượng lục bảo giữa thân
+            targetCtx.fillStyle = '#10b981';
+            targetCtx.beginPath();
+            targetCtx.arc(0, -4, 6, 0, Math.PI * 2);
+            targetCtx.fill();
+        }
+        targetCtx.restore();
+    }
+
+    // ============================================================================
+    // 5. CÁC LỚP THỰC THỂ TRONG GAME (PLAYER, BULLET, CHICKEN, METEOR, BOSS, PARTICLES)
+    // ============================================================================
+    class Player {
+        constructor(shipId, startTier) {
+            this.width = 42;
+            this.height = 50;
+            this.x = GAME_WIDTH / 2;
+            this.y = GAME_HEIGHT - 75;
+            this.baseSpeed = 6.2;
+            this.weaponTier = startTier || 1;
+            this.lastShotTime = 0;
+            this.isHit = false;
+            this.hitTimer = 0;
+            this.shield = false;
+            this.applyShipConfig(shipId, true);
+        }
+
+        applyShipConfig(shipId, isInitial) {
+            const cfg = SHIPS[shipId] || SHIPS.falcon;
+            this.shipId = cfg.id;
+            const prevPct = this.maxHp ? (this.hp / this.maxHp) : 1;
+            this.maxHp = cfg.maxHp;
+            this.hp = isInitial ? cfg.maxHp : Math.max(15, Math.round(cfg.maxHp * prevPct));
+            this.speed = this.baseSpeed * cfg.speedMult;
+            this.damageMult = cfg.damageMult;
+            this.fireRateMult = cfg.fireRateMult;
+            this.healBonus = cfg.healBonus;
+            this.color = cfg.primaryColor;
+            if (isInitial && cfg.autoShieldPerLevel) {
+                this.shield = true;
+            }
+        }
+
+        draw(ctx) {
+            ctx.save();
+            ctx.translate(this.x, this.y);
+            if (this.isHit && Math.floor(Date.now() / 70) % 2 === 0) {
+                ctx.globalAlpha = 0.42;
+            }
+            drawShipHull(ctx, this.shipId, this.width, this.height, this.shield);
+            ctx.restore();
+        }
+
+        update() {
+            if (this.isHit) {
+                this.hitTimer -= 16.6;
+                if (this.hitTimer <= 0) this.isHit = false;
+            }
+
+            if (isPointerActive) {
+                this.x += (pointerX - this.x) * 0.22;
+                this.y += (pointerY - 30 - this.y) * 0.22;
+            } else {
+                if (keys.ArrowLeft || keys.a || keys.A) this.x -= this.speed;
+                if (keys.ArrowRight || keys.d || keys.D) this.x += this.speed;
+                if (keys.ArrowUp || keys.w || keys.W) this.y -= this.speed;
+                if (keys.ArrowDown || keys.s || keys.S) this.y += this.speed;
+            }
+
+            this.x = Math.max(this.width / 2 + 8, Math.min(GAME_WIDTH - this.width / 2 - 8, this.x));
+            this.y = Math.max(this.height / 2 + 8, Math.min(GAME_HEIGHT - this.height / 2 - 8, this.y));
+
+            const now = Date.now();
+            const baseInterval = this.weaponTier >= 8 ? 115 : (this.weaponTier >= 5 ? 135 : 165);
+            const fireInterval = baseInterval / this.fireRateMult;
+
+            if ((keys[' '] || isPointerActive) && now - this.lastShotTime >= fireInterval) {
+                this.shoot();
+                this.lastShotTime = now;
+            }
+        }
+
+        shoot() {
+            const ammo = AMMO_TYPES[selectedAmmoId] || AMMO_TYPES[1];
+            const y = this.y - this.height / 2;
+            const baseSpeed = (-12.5 - this.weaponTier * 0.4) * ammo.speedMult;
+            const tierDmg = (11 + this.weaponTier * 1.6) * this.damageMult * ammo.damageMult;
+
+            const spawnBullet = (offsetX, offsetY, vx, vy) => {
+                playerBullets.push(new Bullet(
+                    this.x + offsetX,
+                    y + offsetY,
+                    vx,
+                    vy,
+                    ammo,
+                    true,
+                    tierDmg,
+                    this.weaponTier
+                ));
+            };
+
+            // 10 Cấp độ đạn khác nhau
+            const t = this.weaponTier;
+            if (t === 1) {
+                spawnBullet(0, 0, 0, baseSpeed);
+            } else if (t === 2) {
+                spawnBullet(-11, 2, 0, baseSpeed);
+                spawnBullet(11, 2, 0, baseSpeed);
+            } else if (t === 3) {
+                spawnBullet(0, -4, 0, baseSpeed);
+                spawnBullet(-16, 4, -0.6, baseSpeed);
+                spawnBullet(16, 4, 0.6, baseSpeed);
+            } else if (t === 4) {
+                spawnBullet(-8, 0, -0.5, baseSpeed);
+                spawnBullet(8, 0, 0.5, baseSpeed);
+                spawnBullet(-20, 8, -1.8, baseSpeed);
+                spawnBullet(20, 8, 1.8, baseSpeed);
+            } else if (t === 5) {
+                for (let i = -2; i <= 2; i++) spawnBullet(i * 6, Math.abs(i) * 3, i * 1.3, baseSpeed);
+            } else if (t === 6) {
+                for (let i = -3; i <= 3; i++) {
+                    if (i !== 0) spawnBullet(i * 5, Math.abs(i) * 2, i * 1.35, baseSpeed);
+                }
+            } else if (t === 7) {
+                for (let i = -3; i <= 3; i++) spawnBullet(i * 5, Math.abs(i) * 2, i * 1.5, baseSpeed);
+            } else if (t === 8) {
+                for (let i = -4; i <= 4; i++) spawnBullet(i * 4, Math.abs(i) * 2, i * 1.45, baseSpeed);
+            } else if (t === 9) {
+                for (let i = -4; i <= 4; i++) spawnBullet(i * 5, Math.abs(i) * 2, i * 1.75, baseSpeed);
+                // Đạn bảo vệ 2 bên hông
+                spawnBullet(-24, 14, -4.5, baseSpeed * 0.7);
+                spawnBullet(24, 14, 4.5, baseSpeed * 0.7);
+            } else {
+                // Cấp 10 Tối Thượng: Tỏa 11 tia + 2 luồng bọc hậu
+                for (let i = -5; i <= 5; i++) {
+                    spawnBullet(i * 4, Math.abs(i) * 1.5, i * 1.65, baseSpeed);
+                }
+                spawnBullet(-18, 22, -2.2, Math.abs(baseSpeed) * 0.65);
+                spawnBullet(18, 22, 2.2, Math.abs(baseSpeed) * 0.65);
+            }
+        }
+
+        takeDamage(amount) {
+            if (this.isHit) return;
+            if (this.shield) {
+                this.shield = false;
+                this.isHit = true;
+                this.hitTimer = 950;
+                screenShake = 8;
+                createShockwave(this.x, this.y, '#00f3ff', 75);
+                createBurstParticles(this.x, this.y, '#00f3ff', 28, 'spark');
+                addFloatingText(this.x, this.y - 25, 'KHIÊN CHẶN SÁT THƯƠNG!', '#00f3ff');
+                updateHUD();
+                return;
+            }
+
+            this.hp -= amount;
+            this.isHit = true;
+            this.hitTimer = 1100;
+            screenShake = 12;
+
+            if (this.weaponTier > 1) {
+                this.weaponTier--;
+                addFloatingText(this.x, this.y - 32, '-1 CẤP ĐẠN', '#fb7185');
+            }
+
+            createBurstParticles(this.x, this.y, '#ff2a6d', 30, 'spark');
+            createShockwave(this.x, this.y, '#ff2a6d', 60);
+            updateHUD();
+
+            if (this.hp <= 0) {
+                this.hp = 0;
+                updateHUD();
+                endGame(false);
+            }
+        }
+
+        heal(baseAmount) {
+            const actualHeal = Math.round(baseAmount * this.healBonus);
+            this.hp = Math.min(this.maxHp, this.hp + actualHeal);
+            addFloatingText(this.x, this.y - 28, `+${actualHeal} HP`, '#34d399');
+            updateHUD();
+        }
+    }
+
+    // Lớp Đạn (4 kiểu hình dạng cho người chơi + Trứng Gà cho địch)
+    class Bullet {
+        constructor(x, y, vx, vy, ammoConfig, isPlayer, damage, tier = 1) {
+            this.x = x;
+            this.y = y;
+            this.vx = vx;
+            this.vy = vy;
+            this.isPlayer = isPlayer;
+            this.damage = damage;
+            this.tier = tier;
+            this.markedForDeletion = false;
+            this.rotation = 0;
+
+            if (isPlayer) {
+                this.ammoType = ammoConfig.id;
+                this.color = ammoConfig.color;
+                this.coreColor = ammoConfig.coreColor;
+                this.slowEffect = ammoConfig.slowEffect;
+                this.pierceLeft = ammoConfig.pierceCount;
+                this.hitIds = new Set();
+                this.radius = this.ammoType === 2 ? 9 + tier * 0.4 : (this.ammoType === 3 ? 14 + tier * 0.5 : 8 + tier * 0.3);
+            } else {
+                // Trứng gà hoặc cầu lửa Boss
+                this.color = ammoConfig.color || '#fff9e6';
+                this.radius = ammoConfig.radius || 9;
+                this.isBossFireball = ammoConfig.isBossFireball || false;
+            }
+        }
+
+        update() {
+            this.x += this.vx;
+            this.y += this.vy;
+            this.rotation += 0.28;
+
+            if (this.y < -40 || this.y > GAME_HEIGHT + 40 || this.x < -40 || this.x > GAME_WIDTH + 40) {
+                this.markedForDeletion = true;
+            }
+        }
+
+        draw(ctx) {
+            ctx.save();
+            ctx.translate(this.x, this.y);
+
+            if (this.isPlayer) {
+                ctx.shadowBlur = 12;
+                ctx.shadowColor = this.color;
+
+                if (this.ammoType === 1) {
+                    // 1. Đạn Tia Laser
+                    const angle = Math.atan2(this.vy, this.vx) + Math.PI / 2;
+                    ctx.rotate(angle);
+                    ctx.fillStyle = this.color;
+                    ctx.beginPath();
+                    ctx.roundRect(-3.5, -12, 7, 24, 4);
+                    ctx.fill();
+                    ctx.fillStyle = this.coreColor;
+                    ctx.fillRect(-1.5, -9, 3, 18);
+
+                } else if (this.ammoType === 2) {
+                    // 2. Cầu Nhiệt Plasma
+                    ctx.fillStyle = this.color;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.fillStyle = this.coreColor;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, this.radius * 0.55, 0, Math.PI * 2);
+                    ctx.fill();
+
+                } else if (this.ammoType === 3) {
+                    // 3. Sóng Băng Từ Trường (Lưỡi sóng bán nguyệt)
+                    const angle = Math.atan2(this.vy, this.vx) + Math.PI / 2;
+                    ctx.rotate(angle);
+                    ctx.strokeStyle = this.color;
+                    ctx.lineWidth = 4.5;
+                    ctx.beginPath();
+                    ctx.arc(0, 4, this.radius, Math.PI * 1.15, Math.PI * 1.85);
+                    ctx.stroke();
+                    ctx.strokeStyle = this.coreColor;
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.arc(0, 4, this.radius - 2, Math.PI * 1.2, Math.PI * 1.8);
+                    ctx.stroke();
+
+                } else if (this.ammoType === 4) {
+                    // 4. Phi Tiêu Xuyên Phá (Sao 4 cánh xoay tròn)
+                    ctx.rotate(this.rotation);
+                    ctx.fillStyle = this.color;
+                    ctx.beginPath();
+                    const rOut = this.radius + 3;
+                    const rIn = 4;
+                    for (let i = 0; i < 8; i++) {
+                        const r = i % 2 === 0 ? rOut : rIn;
+                        const a = (i * Math.PI) / 4;
+                        if (i === 0) ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+                        else ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+                    }
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.fillStyle = '#ffffff';
+                    ctx.beginPath();
+                    ctx.arc(0, 0, 2.5, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            } else {
+                // Đạn của Gà: Quả Trứng
+                if (this.isBossFireball) {
+                    ctx.shadowBlur = 10;
+                    ctx.shadowColor = '#ff2a6d';
+                    ctx.fillStyle = '#fbbf24';
+                    ctx.beginPath();
+                    ctx.ellipse(0, 0, 9, 13, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.strokeStyle = '#ef4444';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                } else {
+                    ctx.fillStyle = '#fffbeb';
+                    ctx.strokeStyle = '#fde68a';
+                    ctx.lineWidth = 1.5;
+                    ctx.beginPath();
+                    ctx.ellipse(0, 0, 8, 11, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.stroke();
+                }
+            }
+            ctx.restore();
+        }
+    }
+
+    // Lớp Kẻ Địch: Gà Vũ Trụ
+    let nextEntityUid = 1;
+    class ChickenEnemy {
+        constructor(level) {
+            this.uid = nextEntityUid++;
+            this.width = 38 + Math.random() * 14;
+            this.height = this.width;
+            this.x = Math.random() * (GAME_WIDTH - 100) + 50;
+            this.y = -this.height;
+            this.baseSpeed = (1.35 + Math.random() * 1.2) * (1 + level * 0.08);
+            this.hp = (this.width > 45 ? 42 : 22) + level * 7;
+            this.maxHp = this.hp;
+            this.angle = Math.random() * Math.PI * 2;
+            this.curve = 0.8 + Math.random() * 1.4;
+            this.markedForDeletion = false;
+            this.lastEggTime = Date.now() + Math.random() * 1600;
+            this.slowTimer = 0;
+            // Màu sắc lông gà đa dạng theo cấp
+            const palettes = ['#ffffff', '#fef08a', '#fed7aa', '#f5d0fe'];
+            this.featherColor = palettes[Math.floor(Math.random() * palettes.length)];
+        }
+
+        applySlow() {
+            this.slowTimer = 150; // ~2.5 giây
+        }
+
+        update() {
+            const slowFactor = this.slowTimer > 0 ? 0.55 : 1.0;
+            if (this.slowTimer > 0) this.slowTimer--;
+
+            this.y += this.baseSpeed * slowFactor;
+            this.x += Math.sin(this.angle) * this.curve * slowFactor;
+            this.angle += 0.045 * slowFactor;
+
+            this.x = Math.max(30, Math.min(GAME_WIDTH - 30, this.x));
+
+            // Thả trứng
+            if (Date.now() - this.lastEggTime > 2300) {
+                enemyBullets.push(new Bullet(this.x, this.y + this.height / 2, 0, 3.8 + currentLevel * 0.25, {}, false, 16));
+                this.lastEggTime = Date.now() + Math.random() * 1200;
+            }
+
+            if (this.y - this.height > GAME_HEIGHT + 20) {
+                this.markedForDeletion = true;
+            }
+        }
+
+        draw(ctx) {
+            ctx.save();
+            ctx.translate(this.x, this.y);
+
+            const wingFlap = Math.sin(Date.now() * 0.018 + this.uid) * 10;
+            const bodyTint = this.slowTimer > 0 ? '#7dd3fc' : this.featherColor;
+
+            // Hai cánh vỗ
+            ctx.fillStyle = bodyTint;
+            ctx.beginPath();
+            ctx.ellipse(-this.width / 2 - 4, wingFlap, 16, 10, -0.25, 0, Math.PI * 2);
+            ctx.ellipse(this.width / 2 + 4, wingFlap, 16, 10, 0.25, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Thân gà tròn
+            ctx.fillStyle = bodyTint;
+            ctx.beginPath();
+            ctx.arc(0, 0, this.width / 2, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Mào đỏ
+            ctx.fillStyle = '#ef4444';
+            ctx.beginPath();
+            ctx.arc(-5, -this.height / 2 - 2, 5, 0, Math.PI * 2);
+            ctx.arc(0, -this.height / 2 - 5, 6, 0, Math.PI * 2);
+            ctx.arc(5, -this.height / 2 - 2, 5, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Mỏ vàng
+            ctx.fillStyle = '#f59e0b';
+            ctx.beginPath();
+            ctx.moveTo(-6, 1);
+            ctx.lineTo(6, 1);
+            ctx.lineTo(0, 10);
+            ctx.closePath();
+            ctx.fill();
+
+            // Mắt
+            ctx.fillStyle = '#0f172a';
+            ctx.beginPath();
+            ctx.arc(-6, -4, 2.5, 0, Math.PI * 2);
+            ctx.arc(6, -4, 2.5, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Thanh máu nhỏ nếu bị bắn trúng
+            if (this.hp < this.maxHp) {
+                ctx.fillStyle = 'rgba(0,0,0,0.6)';
+                ctx.fillRect(-16, -this.height / 2 - 14, 32, 4);
+                ctx.fillStyle = this.slowTimer > 0 ? '#38bdf8' : '#22c55e';
+                ctx.fillRect(-16, -this.height / 2 - 14, 32 * (this.hp / this.maxHp), 4);
+            }
+
+            ctx.restore();
+        }
+    }
+
+    // Lớp Thiên Thạch Vũ Trụ (Meteor / Asteroid)
+    class Meteor {
+        constructor(level) {
+            this.uid = nextEntityUid++;
+            this.radius = 22 + Math.random() * 18;
+            this.x = Math.random() * (GAME_WIDTH - 80) + 40;
+            this.y = -this.radius * 2;
+            this.vx = (Math.random() - 0.5) * 1.8;
+            this.vy = 1.6 + Math.random() * 1.8 + level * 0.12;
+            this.rotation = 0;
+            this.rotSpeed = (Math.random() - 0.5) * 0.06;
+            this.hp = 35 + this.radius * 1.2 + level * 8;
+            this.maxHp = this.hp;
+            this.slowTimer = 0;
+            this.markedForDeletion = false;
+
+            // Tạo các đỉnh đa giác lồi lõm tự nhiên cho thiên thạch
+            this.vertices = [];
+            const points = 9;
+            for (let i = 0; i < points; i++) {
+                const angle = (i / points) * Math.PI * 2;
+                const r = this.radius * (0.78 + Math.random() * 0.32);
+                this.vertices.push({ x: Math.cos(angle) * r, y: Math.sin(angle) * r });
+            }
+        }
+
+        applySlow() {
+            this.slowTimer = 150;
+        }
+
+        update() {
+            const slowFactor = this.slowTimer > 0 ? 0.55 : 1.0;
+            if (this.slowTimer > 0) this.slowTimer--;
+
+            this.x += this.vx * slowFactor;
+            this.y += this.vy * slowFactor;
+            this.rotation += this.rotSpeed * slowFactor;
+
+            // Đuôi khói lửa nhẹ của thiên thạch
+            if (frameCount % 4 === 0) {
+                particles.push(new RichParticle(
+                    this.x + (Math.random() - 0.5) * this.radius,
+                    this.y - this.radius * 0.6,
+                    this.slowTimer > 0 ? '#38bdf8' : '#f97316',
+                    'smoke'
+                ));
+            }
+
+            if (this.y - this.radius > GAME_HEIGHT + 30) {
+                this.markedForDeletion = true;
+            }
+        }
+
+        draw(ctx) {
+            ctx.save();
+            ctx.translate(this.x, this.y);
+            ctx.rotate(this.rotation);
+
+            ctx.fillStyle = this.slowTimer > 0 ? '#475569' : '#57534e';
+            ctx.strokeStyle = this.slowTimer > 0 ? '#38bdf8' : '#ea580c';
+            ctx.lineWidth = 2;
+
+            ctx.beginPath();
+            this.vertices.forEach((v, idx) => {
+                if (idx === 0) ctx.moveTo(v.x, v.y);
+                else ctx.lineTo(v.x, v.y);
+            });
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            // Hố thiên thạch
+            ctx.fillStyle = '#292524';
+            ctx.beginPath();
+            ctx.arc(-this.radius * 0.25, -this.radius * 0.15, this.radius * 0.22, 0, Math.PI * 2);
+            ctx.arc(this.radius * 0.25, this.radius * 0.2, this.radius * 0.16, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.restore();
+        }
+    }
+
+    // Lớp Trùm Cuối (Gà Chúa Khổng Lồ)
+    class BossChicken {
+        constructor(level) {
+            this.uid = nextEntityUid++;
+            this.level = level;
+            this.width = 135 + level * 6;
+            this.height = 110 + level * 4;
+            this.x = GAME_WIDTH / 2;
+            this.y = -this.height;
+            this.targetY = 120;
+            this.maxHp = 480 + level * 320;
+            this.hp = this.maxHp;
+            this.speedX = 2.4 + level * 0.22;
+            this.angle = 0;
+            this.phase = 1;
+            this.lastShotTime = Date.now();
+            this.fireRate = Math.max(550, 1450 - level * 85);
+            this.slowTimer = 0;
+
+            document.getElementById('boss-title-text').textContent = `🐔 GÀ CHÚA VŨ TRỤ - CẤP ${level}`;
+            document.getElementById('boss-hud-overlay').classList.remove('hidden-overlay');
+            updateHUD();
+        }
+
+        applySlow() {
+            this.slowTimer = 90;
+        }
+
+        update() {
+            const slowFactor = this.slowTimer > 0 ? 0.65 : 1.0;
+            if (this.slowTimer > 0) this.slowTimer--;
+
+            if (this.y < this.targetY) {
+                this.y += 2.2;
+            } else {
+                this.x += this.speedX * slowFactor;
+                if (this.x > GAME_WIDTH - this.width / 2 - 20 || this.x < this.width / 2 + 20) {
+                    this.speedX *= -1;
+                }
+                this.y = this.targetY + Math.sin(this.angle) * 22;
+                this.angle += 0.04 * slowFactor;
+
+                if (Date.now() - this.lastShotTime > this.fireRate) {
+                    this.shoot();
+                    this.lastShotTime = Date.now();
+                }
+
+                if (this.hp < this.maxHp * 0.5 && this.phase === 1) {
+                    this.phase = 2;
+                    this.fireRate *= 0.68;
+                    this.speedX *= 1.3;
+                    createShockwave(this.x, this.y, '#ff2a6d', 130);
+                    addFloatingText(this.x, this.y, 'GÀ CHÚA NỔI GIẬN!', '#ff2a6d');
+                }
+            }
+        }
+
+        shoot() {
+            const spd = 4.6 + this.level * 0.35;
+            if (this.phase === 1) {
+                for (let i = -2; i <= 2; i++) {
+                    enemyBullets.push(new Bullet(this.x + i * 16, this.y + this.height / 2, i * 1.3, spd, { isBossFireball: true }, false, 20));
+                }
+            } else {
+                const count = 9;
+                for (let i = 0; i < count; i++) {
+                    const a = (Math.PI / (count - 1)) * i;
+                    const vx = Math.cos(a) * spd;
+                    const vy = Math.sin(a) * spd + 1.5;
+                    enemyBullets.push(new Bullet(this.x, this.y + 20, vx, vy, { isBossFireball: true }, false, 22));
+                }
+            }
+        }
+
+        takeDamage(amount) {
+            this.hp -= amount;
+            updateHUD();
+
+            if (this.hp <= 0) {
+                this.hp = 0;
+                screenShake = 20;
+                createShockwave(this.x, this.y, '#fbbf24', 180);
+                createBurstParticles(this.x, this.y, '#ffffff', 55, 'feather');
+                createBurstParticles(this.x, this.y, '#fbbf24', 45, 'spark');
+
+                score += this.level * 1200;
+                if (score > highScore) {
+                    highScore = score;
+                    localStorage.setItem('space_chicken_highscore_v2', highScore);
+                }
+
+                document.getElementById('boss-hud-overlay').classList.add('hidden-overlay');
+                boss = null;
+
+                if (currentLevel >= MAX_LEVEL) {
+                    endGame(true);
+                } else {
+                    currentLevel++;
+                    transitionToNextLevel();
+                }
+            }
+        }
+
+        draw(ctx) {
+            ctx.save();
+            ctx.translate(this.x, this.y);
+
+            const flap = Math.sin(Date.now() * 0.02) * 18;
+            // Đôi cánh khổng lồ
+            ctx.fillStyle = this.phase === 2 ? '#fecdd3' : '#f1f5f9';
+            ctx.beginPath();
+            ctx.ellipse(-this.width / 2 - 12, flap, 34, 20, -0.3, 0, Math.PI * 2);
+            ctx.ellipse(this.width / 2 + 12, flap, 34, 20, 0.3, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Thân Gà Chúa
+            ctx.fillStyle = this.slowTimer > 0 ? '#bae6fd' : (this.phase === 2 ? '#ffe4e6' : '#ffffff');
+            ctx.strokeStyle = this.phase === 2 ? '#f43f5e' : '#cbd5e1';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.ellipse(0, 0, this.width / 2, this.height / 2, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+
+            // Vương miện Gà Chúa Vàng Ròng
+            ctx.fillStyle = '#fbbf24';
+            ctx.strokeStyle = '#d97706';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(-32, -this.height / 2 + 6);
+            ctx.lineTo(-38, -this.height / 2 - 26);
+            ctx.lineTo(-14, -this.height / 2 - 10);
+            ctx.lineTo(0, -this.height / 2 - 34);
+            ctx.lineTo(14, -this.height / 2 - 10);
+            ctx.lineTo(38, -this.height / 2 - 26);
+            ctx.lineTo(32, -this.height / 2 + 6);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            // Mỏ Gà Chúa
+            ctx.fillStyle = '#f59e0b';
+            ctx.beginPath();
+            ctx.moveTo(-16, 8);
+            ctx.lineTo(16, 8);
+            ctx.lineTo(0, 34);
+            ctx.closePath();
+            ctx.fill();
+
+            // Mắt rực lửa
+            ctx.fillStyle = this.phase === 2 ? '#ef4444' : '#0f172a';
+            ctx.beginPath();
+            ctx.arc(-24, -10, 7, 0, Math.PI * 2);
+            ctx.arc(24, -10, 7, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.restore();
+        }
+    }
+
+    // ============================================================================
+    // 6. HỆ THỐNG HIỆU ỨNG HẠT ĐA DẠNG (LÔNG GÀ, MẢNH THIÊN THẠCH, SÓNG XUNG KÍCH)
+    // ============================================================================
+    class RichParticle {
+        constructor(x, y, color, kind = 'spark') {
+            this.x = x;
+            this.y = y;
+            this.color = color;
+            this.kind = kind; // 'feather', 'rock', 'spark', 'smoke'
+            this.life = 1.0;
+            this.rotation = Math.random() * Math.PI * 2;
+            this.rotSpeed = (Math.random() - 0.5) * 0.22;
+
+            if (kind === 'feather') {
+                // Lông gà bay tung tóe rồi rơi nhẹ
+                const angle = Math.random() * Math.PI * 2;
+                const spd = 2 + Math.random() * 5.5;
+                this.vx = Math.cos(angle) * spd;
+                this.vy = Math.sin(angle) * spd - 1.5;
+                this.gravity = 0.08;
+                this.decay = 0.016 + Math.random() * 0.015;
+                this.size = 6 + Math.random() * 5;
+            } else if (kind === 'rock') {
+                // Mảnh vỡ đá thiên thạch góc cạnh
+                const angle = Math.random() * Math.PI * 2;
+                const spd = 1.5 + Math.random() * 6;
+                this.vx = Math.cos(angle) * spd;
+                this.vy = Math.sin(angle) * spd;
+                this.gravity = 0.06;
+                this.decay = 0.02 + Math.random() * 0.02;
+                this.size = 4 + Math.random() * 5;
+            } else if (kind === 'smoke') {
+                this.vx = (Math.random() - 0.5) * 0.8;
+                this.vy = -0.8 - Math.random() * 1.2;
+                this.gravity = 0;
+                this.decay = 0.04;
+                this.size = 5 + Math.random() * 6;
+            } else {
+                // Tia lửa năng lượng
+                const angle = Math.random() * Math.PI * 2;
+                const spd = 2 + Math.random() * 7;
+                this.vx = Math.cos(angle) * spd;
+                this.vy = Math.sin(angle) * spd;
+                this.gravity = 0.03;
+                this.decay = 0.03 + Math.random() * 0.025;
+                this.size = 2.5 + Math.random() * 3.5;
+            }
+        }
+
+        update() {
+            this.x += this.vx;
+            this.y += this.vy;
+            this.vy += this.gravity;
+            if (this.kind === 'feather') {
+                this.vx *= 0.96;
+                this.x += Math.sin(this.life * 10) * 0.6; // Lông gà chao nghiêng
+            }
+            this.rotation += this.rotSpeed;
+            this.life -= this.decay;
+        }
+
+        draw(ctx) {
+            ctx.save();
+            ctx.globalAlpha = Math.max(0, this.life);
+            ctx.translate(this.x, this.y);
+            ctx.rotate(this.rotation);
+
+            if (this.kind === 'feather') {
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.ellipse(0, 0, this.size, this.size * 0.38, 0, 0, Math.PI * 2);
+                ctx.fill();
+            } else if (this.kind === 'rock') {
+                ctx.fillStyle = this.color;
+                ctx.fillRect(-this.size / 2, -this.size / 2, this.size, this.size * 0.8);
+            } else if (this.kind === 'smoke') {
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(0, 0, this.size, 0, Math.PI * 2);
+                ctx.fill();
+            } else {
+                ctx.fillStyle = this.color;
+                ctx.shadowBlur = 8;
+                ctx.shadowColor = this.color;
+                ctx.fillRect(-this.size / 2, -this.size / 2, this.size, this.size);
+            }
+            ctx.restore();
+        }
+    }
+
+    class ShockwaveRing {
+        constructor(x, y, color, maxRadius = 65) {
+            this.x = x;
+            this.y = y;
+            this.color = color;
+            this.radius = 6;
+            this.maxRadius = maxRadius;
+            this.life = 1.0;
+        }
+        update() {
+            this.radius += (this.maxRadius - this.radius) * 0.18;
+            this.life -= 0.045;
+        }
+        draw(ctx) {
+            ctx.save();
+            ctx.globalAlpha = Math.max(0, this.life);
+            ctx.strokeStyle = this.color;
+            ctx.lineWidth = 3 * this.life;
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = this.color;
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+        }
+    }
+
+    class PowerUpItem {
+        constructor(x, y) {
+            this.x = x;
+            this.y = y;
+            this.radius = 15;
+            this.speed = 2.1;
+            this.angle = 0;
+            this.markedForDeletion = false;
+
+            const r = Math.random();
+            if (r < 0.52) {
+                this.type = 'U';
+                this.color = '#facc15';
+            } else if (r < 0.80) {
+                this.type = 'H';
+                this.color = '#34d399';
+            } else {
+                this.type = 'S';
+                this.color = '#00f3ff';
+            }
+        }
+        update() {
+            this.y += this.speed;
+            this.angle += 0.1;
+            if (this.y - this.radius > GAME_HEIGHT + 20) this.markedForDeletion = true;
+        }
+        draw(ctx) {
+            ctx.save();
+            ctx.translate(this.x, this.y);
+            const s = 1 + Math.sin(this.angle) * 0.12;
+            ctx.scale(s, s);
+
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+            ctx.strokeStyle = this.color;
+            ctx.lineWidth = 2.5;
+            ctx.shadowBlur = 12;
+            ctx.shadowColor = this.color;
+            ctx.beginPath();
+            ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.fillStyle = this.color;
+            ctx.font = "800 14px 'Chakra Petch', sans-serif";
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(this.type, 0, 1);
+            ctx.restore();
+        }
+    }
+
+    class FloatingText {
+        constructor(x, y, text, color) {
+            this.x = x;
+            this.y = y;
+            this.text = text;
+            this.color = color;
+            this.life = 1.0;
+        }
+        update() {
+            this.y -= 1.3;
+            this.life -= 0.022;
+        }
+        draw(ctx) {
+            ctx.save();
+            ctx.globalAlpha = Math.max(0, this.life);
+            ctx.font = "800 14px 'Chakra Petch', 'Be Vietnam Pro', sans-serif";
+            ctx.fillStyle = this.color;
+            ctx.textAlign = 'center';
+            ctx.shadowBlur = 6;
+            ctx.shadowColor = '#000000';
+            ctx.fillText(this.text, this.x, this.y);
+            ctx.restore();
+        }
+    }
+
+    function createBurstParticles(x, y, color, count, kind = 'spark') {
+        for (let i = 0; i < count; i++) {
+            particles.push(new RichParticle(x, y, color, kind));
+        }
+    }
+
+    function createShockwave(x, y, color, maxRadius = 60) {
+        shockwaves.push(new ShockwaveRing(x, y, color, maxRadius));
+    }
+
+    function addFloatingText(x, y, text, color) {
+        floatingTexts.push(new FloatingText(x, y, text, color));
+    }
+
+    // ============================================================================
+    // 7. NỀN SAO VŨ TRỤ & TINH VÂN WIDESCREEN
+    // ============================================================================
+    function initStarfield() {
+        stars = [];
+        nebulae = [];
+        for (let i = 0; i < 110; i++) {
+            stars.push({
+                x: Math.random() * GAME_WIDTH,
+                y: Math.random() * GAME_HEIGHT,
+                size: Math.random() * 2.2 + 0.5,
+                speed: Math.random() * 2.8 + 0.4
+            });
+        }
+        for (let i = 0; i < 4; i++) {
+            nebulae.push({
+                x: Math.random() * GAME_WIDTH,
+                y: Math.random() * GAME_HEIGHT,
+                r: 140 + Math.random() * 120,
+                color: i % 2 === 0 ? 'rgba(6, 182, 212, 0.06)' : 'rgba(147, 51, 234, 0.06)',
+                speed: 0.35 + Math.random() * 0.25
+            });
+        }
+    }
+
+    function drawBackground() {
+        nebulae.forEach(n => {
+            const grad = ctx.createRadialGradient(n.x, n.y, 10, n.x, n.y, n.r);
+            grad.addColorStop(0, n.color);
+            grad.addColorStop(1, 'rgba(0,0,0,0)');
+            ctx.fillStyle = grad;
+            ctx.beginPath();
+            ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
+            ctx.fill();
+
+            if (gameState === 'PLAYING' || gameState === 'BOSS_FIGHT' || gameState === 'TRANSITION') {
+                n.y += n.speed;
+                if (n.y - n.r > GAME_HEIGHT) {
+                    n.y = -n.r;
+                    n.x = Math.random() * GAME_WIDTH;
+                }
+            }
+        });
+
+        ctx.fillStyle = '#ffffff';
+        stars.forEach(s => {
+            ctx.globalAlpha = Math.min(1, s.size / 2.2);
+            ctx.fillRect(s.x, s.y, s.size, s.size);
+            if (gameState === 'PLAYING' || gameState === 'BOSS_FIGHT' || gameState === 'TRANSITION') {
+                s.y += s.speed * (gameState === 'BOSS_FIGHT' ? 1.8 : 1);
+                if (s.y > GAME_HEIGHT) {
+                    s.y = 0;
+                    s.x = Math.random() * GAME_WIDTH;
+                }
+            }
+        });
+        ctx.globalAlpha = 1.0;
+    }
+
+    // ============================================================================
+    // 8. XỬ LÝ VA CHẠM, HIỆU ỨNG ĐẠN ĐẶC BIỆT & CẬP NHẬT HUD
+    // ============================================================================
+    function handleBulletHitTarget(b, target, isMeteor) {
+        if (b.hitIds.has(target.uid)) return;
+        b.hitIds.add(target.uid);
+        b.pierceLeft--;
+        if (b.pierceLeft <= 0) {
+            b.markedForDeletion = true;
+        }
+
+        target.hp -= b.damage;
+        if (b.slowEffect && target.applySlow) {
+            target.applySlow();
+        }
+
+        // Hiệu ứng hạt khi bắn trúng
+        if (isMeteor) {
+            createBurstParticles(b.x, b.y, '#a8a29e', 5, 'rock');
+            createBurstParticles(b.x, b.y, '#f97316', 4, 'spark');
+        } else {
+            createBurstParticles(b.x, b.y, target.featherColor || '#ffffff', 4, 'feather');
+            createBurstParticles(b.x, b.y, b.color, 3, 'spark');
+        }
+    }
+
+    function checkCollisions() {
+        playerBullets.forEach(b => {
+            if (b.markedForDeletion) return;
+
+            // Đạn trúng Boss
+            if (boss &&
+                b.x > boss.x - boss.width / 2 && b.x < boss.x + boss.width / 2 &&
+                b.y > boss.y - boss.height / 2 && b.y < boss.y + boss.height / 2) {
+                if (!b.hitIds.has(boss.uid)) {
+                    b.hitIds.add(boss.uid);
+                    b.pierceLeft--;
+                    if (b.pierceLeft <= 0) b.markedForDeletion = true;
+                    if (b.slowEffect) boss.applySlow();
+                    createBurstParticles(b.x, b.y, '#ffffff', 4, 'feather');
+                    createBurstParticles(b.x, b.y, b.color, 4, 'spark');
+                    boss.takeDamage(b.damage);
+                }
+                return;
+            }
+
+            // Đạn trúng Gà địch
+            enemies.forEach(e => {
+                if (!e.markedForDeletion &&
+                    Math.hypot(b.x - e.x, b.y - e.y) < e.width / 2 + b.radius) {
+                    handleBulletHitTarget(b, e, false);
+
+                    if (e.hp <= 0) {
+                        e.markedForDeletion = true;
+                        score += e.maxHp > 35 ? 60 : 30;
+                        enemiesKilled++;
+                        if (score > highScore) {
+                            highScore = score;
+                            localStorage.setItem('space_chicken_highscore_v2', highScore);
+                        }
+                        // Nổ lông gà + sóng xung kích
+                        createBurstParticles(e.x, e.y, e.featherColor, 18, 'feather');
+                        createBurstParticles(e.x, e.y, '#f59e0b', 10, 'spark');
+                        createShockwave(e.x, e.y, '#fde047', 42);
+
+                        if (Math.random() < 0.14) {
+                            powerups.push(new PowerUpItem(e.x, e.y));
+                        }
+                        updateHUD();
+                    }
+                }
+            });
+
+            // Đạn trúng Thiên Thạch
+            meteors.forEach(m => {
+                if (!m.markedForDeletion &&
+                    Math.hypot(b.x - m.x, b.y - m.y) < m.radius + b.radius) {
+                    handleBulletHitTarget(b, m, true);
+
+                    if (m.hp <= 0) {
+                        m.markedForDeletion = true;
+                        score += 45;
+                        enemiesKilled++;
+                        screenShake = 5;
+                        // Nổ đá thiên thạch + lửa
+                        createBurstParticles(m.x, m.y, '#78716c', 18, 'rock');
+                        createBurstParticles(m.x, m.y, '#ea580c', 16, 'spark');
+                        createShockwave(m.x, m.y, '#f97316', 55);
+
+                        if (Math.random() < 0.18) {
+                            powerups.push(new PowerUpItem(m.x, m.y));
+                        }
+                        updateHUD();
+                    }
+                }
+            });
+        });
+
+        // Trứng gà / Đạn Boss trúng Chiến Cơ
+        enemyBullets.forEach(eb => {
+            if (!eb.markedForDeletion && !player.isHit &&
+                Math.hypot(eb.x - player.x, eb.y - player.y) < 20 + eb.radius) {
+                eb.markedForDeletion = true;
+                createBurstParticles(eb.x, eb.y, '#fde047', 12, 'spark');
+                player.takeDamage(eb.damage);
+            }
+        });
+
+        // Chiến Cơ va chạm Gà hoặc Thiên Thạch
+        if (!player.isHit) {
+            enemies.forEach(e => {
+                if (!e.markedForDeletion && Math.hypot(player.x - e.x, player.y - e.y) < e.width / 2 + 18) {
+                    e.markedForDeletion = true;
+                    createBurstParticles(e.x, e.y, e.featherColor, 20, 'feather');
+                    player.takeDamage(22);
+                }
+            });
+
+            meteors.forEach(m => {
+                if (!m.markedForDeletion && Math.hypot(player.x - m.x, player.y - m.y) < m.radius + 18) {
+                    m.markedForDeletion = true;
+                    createBurstParticles(m.x, m.y, '#78716c', 22, 'rock');
+                    createShockwave(m.x, m.y, '#f97316', 60);
+                    player.takeDamage(28);
+                }
+            });
+
+            if (boss &&
+                player.x > boss.x - boss.width / 2 && player.x < boss.x + boss.width / 2 &&
+                player.y > boss.y - boss.height / 2 && player.y < boss.y + boss.height / 2) {
+                player.takeDamage(32);
+                player.y = Math.min(GAME_HEIGHT - 40, player.y + 55);
+            }
+        }
+
+        // Nhặt vật phẩm (U, H, S)
+        powerups.forEach(pu => {
+            if (!pu.markedForDeletion && Math.hypot(player.x - pu.x, player.y - pu.y) < pu.radius + 24) {
+                pu.markedForDeletion = true;
+                createShockwave(pu.x, pu.y, pu.color, 45);
+                createBurstParticles(pu.x, pu.y, pu.color, 15, 'spark');
+
+                if (pu.type === 'U') {
+                    if (player.weaponTier < 10) {
+                        player.weaponTier++;
+                        addFloatingText(player.x, player.y - 28, `NÂNG ĐẠN CẤP ${player.weaponTier}!`, '#facc15');
+                    } else {
+                        score += 200;
+                        addFloatingText(player.x, player.y - 28, `ĐẠN TỐI ĐA! +200 ĐIỂM`, '#facc15');
+                    }
+                    score += 100;
+                } else if (pu.type === 'H') {
+                    player.heal(30);
+                    score += 60;
+                } else if (pu.type === 'S') {
+                    player.shield = true;
+                    score += 60;
+                    addFloatingText(player.x, player.y - 28, `BẬT KHIÊN BẢO VỆ!`, '#00f3ff');
+                }
+                updateHUD();
+            }
+        });
+    }
+
+    function updateHUD() {
+        document.getElementById('hud-score').textContent = score.toLocaleString('vi-VN');
+        document.getElementById('hud-highscore').textContent = highScore.toLocaleString('vi-VN');
+        document.getElementById('hud-level').textContent = `${currentLevel} / ${MAX_LEVEL}`;
+        document.getElementById('hud-wave-text').textContent = boss ? 'ĐÁNH TRÙM' : `${Math.min(enemiesKilled, killsRequiredForBoss)}/${killsRequiredForBoss}`;
+
+        if (player) {
+            const hpPct = Math.max(0, Math.min(100, (player.hp / player.maxHp) * 100));
+            document.getElementById('hud-hp-text').textContent = `${Math.ceil(player.hp)} / ${player.maxHp}`;
+            const hpBar = document.getElementById('hud-hp-bar');
+            hpBar.style.width = `${hpPct}%`;
+            hpBar.className = hpPct > 32
+                ? 'h-full bg-gradient-to-r from-emerald-400 to-cyan-400 transition-all duration-150 shadow-[0_0_10px_#10b981]'
+                : 'h-full bg-gradient-to-r from-rose-600 to-amber-500 transition-all duration-150 shadow-[0_0_10px_#f43f5e]';
+
+            document.getElementById('hud-weapon-tier').textContent = `CẤP ${player.weaponTier}/10`;
+
+            const shieldBadge = document.getElementById('hud-shield-badge');
+            if (player.shield) {
+                shieldBadge.textContent = 'ĐANG BẬT';
+                shieldBadge.className = 'font-display font-bold px-1.5 py-0.5 rounded text-[10px] bg-cyan-500/25 text-cyan-300 border border-cyan-400';
+            } else {
+                shieldBadge.textContent = 'TẮT';
+                shieldBadge.className = 'font-display font-bold px-1.5 py-0.5 rounded text-[10px] bg-slate-800 text-slate-400 border border-slate-700';
+            }
+        }
+
+        if (boss) {
+            const bossPct = Math.max(0, (boss.hp / boss.maxHp) * 100);
+            document.getElementById('boss-hp-fill').style.width = `${bossPct}%`;
+            document.getElementById('boss-hp-numbers').textContent = `${Math.ceil(boss.hp)} / ${boss.maxHp} HP`;
+        }
+    }
+
+    // ============================================================================
+    // 9. VÒNG LẶP TRẬN ĐẤU, CHUYỂN CẤP & ĐIỀU KHIỂN
+    // ============================================================================
+    function showCenterBanner(title, sub, borderColor = '#fbbf24', duration = 2200) {
+        const banner = document.getElementById('center-banner');
+        const box = document.getElementById('center-banner-box');
+        document.getElementById('center-banner-title').textContent = title;
+        document.getElementById('center-banner-sub').textContent = sub;
+        box.style.borderColor = borderColor;
+        banner.style.display = 'block';
+        setTimeout(() => {
+            banner.style.display = 'none';
+        }, duration);
+    }
+
+    function spawnEntities() {
+        if (gameState !== 'PLAYING') return;
+
+        if (enemiesKilled < killsRequiredForBoss) {
+            const chickenInterval = Math.max(24, 72 - currentLevel * 4);
+            if (frameCount % chickenInterval === 0) {
+                enemies.push(new ChickenEnemy(currentLevel));
+            }
+            const meteorInterval = Math.max(55, 135 - currentLevel * 7);
+            if (frameCount % meteorInterval === 0) {
+                meteors.push(new Meteor(currentLevel));
+            }
+        } else if (enemies.length === 0 && meteors.length === 0) {
+            gameState = 'BOSS_FIGHT';
+            document.getElementById('sidebar-state-badge').textContent = 'ĐÁNH TRÙM';
+            showCenterBanner(`CẢNH BÁO TRÙM CẤP ${currentLevel}!`, 'GÀ CHÚA VŨ TRỤ ĐANG TIẾN VÀO CHIẾN TRƯỜNG', '#f43f5e', 2100);
+            setTimeout(() => {
+                if (gameState === 'BOSS_FIGHT') {
+                    boss = new BossChicken(currentLevel);
+                }
+            }, 2000);
+        }
+    }
+
+    function transitionToNextLevel() {
+        gameState = 'TRANSITION';
+        document.getElementById('sidebar-state-badge').textContent = ` QUA MÀN ${currentLevel}`;
+        enemiesKilled = 0;
+        killsRequiredForBoss = 12 + currentLevel * 4;
+
+        // Hồi máu qua màn & Kích hoạt Khiên tự động nếu là Pháo Đài Titan
+        player.heal(40);
+        if (SHIPS[player.shipId].autoShieldPerLevel) {
+            player.shield = true;
+            addFloatingText(player.x, player.y - 45, 'TITAN TỰ BẬT KHIÊN MỚI!', '#fbbf24');
+        }
+        updateHUD();
+
+        showCenterBanner(`VƯỢT QUA CẤP ĐỘ ${currentLevel - 1}!`, `Chuẩn bị bước vào Cấp Độ ${currentLevel} / ${MAX_LEVEL}...`, '#34d399', 2600);
+        setTimeout(() => {
+            if (gameState === 'TRANSITION') {
+                gameState = 'PLAYING';
+                document.getElementById('sidebar-state-badge').textContent = 'ĐANG CHIẾN ĐẤU';
+            }
+        }, 2600);
+    }
+
+    function gameLoop() {
+        if (gameState !== 'PLAYING' && gameState !== 'BOSS_FIGHT' && gameState !== 'TRANSITION') return;
+
+        ctx.save();
+        if (screenShake > 0) {
+            const dx = (Math.random() - 0.5) * screenShake;
+            const dy = (Math.random() - 0.5) * screenShake;
+            ctx.translate(dx, dy);
+            screenShake *= 0.85;
+            if (screenShake < 0.5) screenShake = 0;
+        }
+
+        ctx.clearRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+        drawBackground();
+
+        player.update();
+        player.draw(ctx);
+
+        if (boss) {
+            boss.update();
+            boss.draw(ctx);
+        }
+
+        [playerBullets, enemyBullets, enemies, meteors, powerups, particles, shockwaves, floatingTexts].forEach(list => {
+            list.forEach(item => {
+                item.update();
+                item.draw(ctx);
+            });
+        });
+
+        playerBullets = playerBullets.filter(b => !b.markedForDeletion);
+        enemyBullets = enemyBullets.filter(b => !b.markedForDeletion);
+        enemies = enemies.filter(e => !e.markedForDeletion);
+        meteors = meteors.filter(m => !m.markedForDeletion);
+        powerups = powerups.filter(p => !p.markedForDeletion);
+        particles = particles.filter(p => p.life > 0);
+        shockwaves = shockwaves.filter(s => s.life > 0);
+        floatingTexts = floatingTexts.filter(t => t.life > 0);
+
+        if (gameState !== 'TRANSITION') {
+            checkCollisions();
+            spawnEntities();
+        }
+
+        ctx.restore();
+        frameCount++;
+        animationId = requestAnimationFrame(gameLoop);
+    }
+
+    function startNewCampaign() {
+        cancelAnimationFrame(animationId);
+        resizeCanvas();
+
+        player = new Player(selectedShipId, startingWeaponTier);
+        boss = null;
+        playerBullets = [];
+        enemyBullets = [];
+        enemies = [];
+        meteors = [];
+        powerups = [];
+        particles = [];
+        shockwaves = [];
+        floatingTexts = [];
+
+        score = 0;
+        currentLevel = 1;
+        enemiesKilled = 0;
+        killsRequiredForBoss = 14;
+        frameCount = 0;
+        isPointerActive = false;
+
+        document.getElementById('boss-hud-overlay').classList.add('hidden-overlay');
+        document.getElementById('start-hangar-modal').classList.add('hidden-overlay');
+        document.getElementById('pause-modal').classList.add('hidden-overlay');
+        document.getElementById('end-modal').classList.add('hidden-overlay');
+        document.getElementById('resume-from-hangar-btn').classList.remove('hidden');
+        document.getElementById('sidebar-state-badge').textContent = 'ĐANG CHIẾN ĐẤU';
+
+        gameState = 'PLAYING';
+        updateHUD();
+        renderAllSelectors();
+        gameLoop();
+    }
+
+    function togglePause() {
+        if (gameState === 'PLAYING' || gameState === 'BOSS_FIGHT' || gameState === 'TRANSITION') {
+            previousPlayState = gameState;
+            gameState = 'PAUSED';
+            cancelAnimationFrame(animationId);
+            document.getElementById('pause-modal').classList.remove('hidden-overlay');
+            document.getElementById('sidebar-state-badge').textContent = 'TẠM DỪNG';
+        } else if (gameState === 'PAUSED') {
+            document.getElementById('pause-modal').classList.add('hidden-overlay');
+            document.getElementById('start-hangar-modal').classList.add('hidden-overlay');
+            gameState = previousPlayState;
+            document.getElementById('sidebar-state-badge').textContent = 'ĐANG CHIẾN ĐẤU';
+            gameLoop();
+        }
+    }
+
+    function openHangarModal() {
+        if (gameState === 'PLAYING' || gameState === 'BOSS_FIGHT' || gameState === 'TRANSITION') {
+            previousPlayState = gameState;
+            gameState = 'PAUSED';
+            cancelAnimationFrame(animationId);
+        }
+        document.getElementById('pause-modal').classList.add('hidden-overlay');
+        document.getElementById('end-modal').classList.add('hidden-overlay');
+        document.getElementById('start-hangar-modal').classList.remove('hidden-overlay');
+        renderAllSelectors();
+    }
+
+    function endGame(victory) {
+        cancelAnimationFrame(animationId);
+        gameState = victory ? 'VICTORY' : 'GAMEOVER';
+        document.getElementById('boss-hud-overlay').classList.add('hidden-overlay');
+        document.getElementById('sidebar-state-badge').textContent = victory ? 'CHIẾN THẮNG' : 'THẤT BẠI';
+
+        const endTitle = document.getElementById('end-title');
+        const endSub = document.getElementById('end-subtitle');
+        if (victory) {
+            endTitle.textContent = '🏆 CHIẾN THẮNG VĨ ĐẠI!';
+            endTitle.className = 'font-display font-extrabold text-3xl md:text-4xl text-emerald-400 mb-2';
+            endSub.textContent = 'Chúc mừng Chỉ Huy! Bạn đã tiêu diệt toàn bộ 10 Gà Chúa Vũ Trụ!';
+        } else {
+            endTitle.textContent = '💥 CHIẾN CƠ BỊ HẠ!';
+            endTitle.className = 'font-display font-extrabold text-3xl md:text-4xl text-rose-400 mb-2';
+            endSub.textContent = 'Hãy nâng cấp Chiến Cơ hoặc chọn Cấp Đạn Khởi Đầu cao hơn để phục thù!';
+        }
+
+        document.getElementById('end-score').textContent = score.toLocaleString('vi-VN');
+        document.getElementById('end-highscore').textContent = highScore.toLocaleString('vi-VN');
+        document.getElementById('end-level').textContent = `${currentLevel} / ${MAX_LEVEL}`;
+        document.getElementById('end-modal').classList.remove('hidden-overlay');
+    }
+
+    // ============================================================================
+    // 10. SỰ KIỆN BÀN PHÍM, CHUỘT, CẢM ỨNG & RESIZE
+    // ============================================================================
+    function resizeCanvas() {
+        const rect = stageContainer.getBoundingClientRect();
+        canvas.width = rect.width;
+        canvas.height = rect.height;
+        GAME_WIDTH = canvas.width;
+        GAME_HEIGHT = canvas.height;
+        if (stars.length === 0) initStarfield();
+    }
+
+    window.addEventListener('resize', resizeCanvas);
+
+    window.addEventListener('keydown', e => {
+        if (keys.hasOwnProperty(e.key)) {
+            keys[e.key] = true;
+        }
+        // Phím 1-4 đổi nhanh Loại Đạn ngay trong trận đấu
+        if (['1', '2', '3', '4'].includes(e.key)) {
+            selectAmmo(Number(e.key));
+        }
+        // Phím P tạm dừng
+        if (e.key === 'p' || e.key === 'P') {
+            togglePause();
+        }
+        // Phím H mở Xưởng Chiến Cơ
+        if (e.key === 'h' || e.key === 'H') {
+            openHangarModal();
+        }
+    });
+
+    window.addEventListener('keyup', e => {
+        if (keys.hasOwnProperty(e.key)) {
+            keys[e.key] = false;
+        }
+    });
+
+    function updatePointerCoords(clientX, clientY) {
+        const rect = canvas.getBoundingClientRect();
+        pointerX = clientX - rect.left;
+        pointerY = clientY - rect.top;
+    }
+
+    canvas.addEventListener('mousedown', e => {
+        isPointerActive = true;
+        updatePointerCoords(e.clientX, e.clientY);
+    });
+    canvas.addEventListener('mousemove', e => {
+        if (isPointerActive) updatePointerCoords(e.clientX, e.clientY);
+    });
+    window.addEventListener('mouseup', () => { isPointerActive = false; });
+
+    canvas.addEventListener('touchstart', e => {
+        isPointerActive = true;
+        updatePointerCoords(e.touches[0].clientX, e.touches[0].clientY);
+    }, { passive: false });
+    canvas.addEventListener('touchmove', e => {
+        if (isPointerActive) updatePointerCoords(e.touches[0].clientX, e.touches[0].clientY);
+        e.preventDefault();
+    }, { passive: false });
+    window.addEventListener('touchend', () => { isPointerActive = false; });
+
+    // Slider & Nút Cấp Đạn Khởi Đầu
+    const tierSlider = document.getElementById('start-tier-slider');
+    const tierValueLabel = document.getElementById('start-tier-value');
+    tierSlider.addEventListener('input', e => {
+        startingWeaponTier = Number(e.target.value);
+        tierValueLabel.textContent = `CẤP ${startingWeaponTier} / 10`;
+        if (player) {
+            player.weaponTier = startingWeaponTier;
+            updateHUD();
+        }
+    });
+
+    // Nút +/- cấp đạn nhanh trên Sidebar
+    document.getElementById('tier-minus-btn').addEventListener('click', () => {
+        if (player && player.weaponTier > 1) {
+            player.weaponTier--;
+            startingWeaponTier = player.weaponTier;
+            tierSlider.value = startingWeaponTier;
+            tierValueLabel.textContent = `CẤP ${startingWeaponTier} / 10`;
+            updateHUD();
+        }
+    });
+    document.getElementById('tier-plus-btn').addEventListener('click', () => {
+        if (player && player.weaponTier < 10) {
+            player.weaponTier++;
+            startingWeaponTier = player.weaponTier;
+            tierSlider.value = startingWeaponTier;
+            tierValueLabel.textContent = `CẤP ${startingWeaponTier} / 10`;
+            updateHUD();
+        }
+    });
+
+    // Các nút bấm điều khiển
+    document.getElementById('launch-mission-btn').addEventListener('click', startNewCampaign);
+    document.getElementById('resume-from-hangar-btn').addEventListener('click', () => {
+        if (gameState === 'PAUSED') togglePause();
+    });
+    document.getElementById('open-hangar-btn').addEventListener('click', openHangarModal);
+    document.getElementById('pause-btn').addEventListener('click', togglePause);
+    document.getElementById('quick-restart-btn').addEventListener('click', startNewCampaign);
+    document.getElementById('resume-btn').addEventListener('click', togglePause);
+    document.getElementById('pause-open-hangar-btn').addEventListener('click', openHangarModal);
+    document.getElementById('pause-restart-btn').addEventListener('click', startNewCampaign);
+    document.getElementById('end-hangar-btn').addEventListener('click', openHangarModal);
+    document.getElementById('end-restart-btn').addEventListener('click', startNewCampaign);
+
+    // Khởi tạo ban đầu
+    resizeCanvas();
+    renderAllSelectors();
+    updateHUD();
+    drawBackground();
+</script>
+</body>
+</html>

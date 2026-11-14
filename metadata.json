@@ -1,0 +1,6 @@
+{
+  "name": "Chiến Binh Không Gian - Buồng Lái Chiến Thuật",
+  "description": "Game bắn gà không gian màn hình ngang với buồng lái chỉ huy chiến thuật, 4 mẫu chiến cơ, 4 hệ thống đạn 10 cấp độ và 10 màn đấu trùm Gà Chúa Vũ Trụ.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
