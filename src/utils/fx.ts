@@ -176,34 +176,52 @@ export class FloatingText {
   }
 }
 
-export type DropKind = 'WEAPON' | 'HEAL' | 'SHIELD';
+export type DropKind = 'WEAPON' | 'HEAL' | 'SHIELD' | 'MAGNET' | 'BOMB';
 
 export class DropItem {
   x: number;
   y: number;
-  radius = 15;
-  kind: DropKind;
+  vx = 0;
   vy = 2.1;
+  radius = 16;
+  kind: DropKind;
   pulse = 0;
 
-  constructor(x: number, y: number) {
+  constructor(x: number, y: number, forcedKind?: DropKind) {
     this.x = x;
     this.y = y;
+    if (forcedKind) {
+      this.kind = forcedKind;
+      return;
+    }
     const r = Math.random();
-    if (r < 0.52) this.kind = 'WEAPON';
-    else if (r < 0.8) this.kind = 'HEAL';
-    else this.kind = 'SHIELD';
+    if (r < 0.34) this.kind = 'WEAPON';
+    else if (r < 0.56) this.kind = 'HEAL';
+    else if (r < 0.72) this.kind = 'SHIELD';
+    else if (r < 0.87) this.kind = 'MAGNET';
+    else this.kind = 'BOMB';
   }
 
-  update() {
-    this.y += this.vy;
-    this.pulse += 0.1;
+  update(targetX?: number, targetY?: number, magnetActive = false) {
+    if (magnetActive && targetX !== undefined && targetY !== undefined) {
+      const dx = targetX - this.x;
+      const dy = targetY - this.y;
+      const dist = Math.max(1, Math.hypot(dx, dy));
+      this.vx = this.vx * 0.85 + (dx / dist) * 1.45;
+      this.vy = this.vy * 0.85 + (dy / dist) * 1.45;
+      this.x += this.vx;
+      this.y += this.vy;
+    } else {
+      this.x += this.vx;
+      this.y += this.vy;
+    }
+    this.pulse += 0.12;
   }
 
   draw(ctx: CanvasRenderingContext2D) {
     ctx.save();
     ctx.translate(this.x, this.y);
-    const scale = 1 + Math.sin(this.pulse) * 0.08;
+    const scale = 1 + Math.sin(this.pulse) * 0.09;
     ctx.scale(scale, scale);
 
     let color = '#facc15';
@@ -214,13 +232,19 @@ export class DropItem {
     } else if (this.kind === 'SHIELD') {
       color = '#38bdf8';
       label = 'S';
+    } else if (this.kind === 'MAGNET') {
+      color = '#e879f9';
+      label = 'M';
+    } else if (this.kind === 'BOMB') {
+      color = '#f97316';
+      label = 'B';
     }
 
-    ctx.shadowBlur = 14;
+    ctx.shadowBlur = 15;
     ctx.shadowColor = color;
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.92)';
     ctx.strokeStyle = color;
-    ctx.lineWidth = 2.2;
+    ctx.lineWidth = 2.4;
     ctx.beginPath();
     ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
     ctx.fill();
@@ -249,19 +273,19 @@ export class BonusStarItem {
     this.x = x;
     this.y = y;
     const angle = Math.random() * Math.PI * 2;
-    const speed = Math.random() * 6 + 2;
+    const speed = Math.random() * 7.5 + 2.2;
     this.vx = Math.cos(angle) * speed;
     this.vy = Math.sin(angle) * speed - 1.5;
     this.points = points;
   }
 
-  update(targetX: number, targetY: number) {
+  update(targetX: number, targetY: number, magnetActive = false) {
     const dx = targetX - this.x;
     const dy = targetY - this.y;
     const dist = Math.max(1, Math.hypot(dx, dy));
-    const pull = dist < 420 ? 0.85 : 0.42;
-    this.vx = this.vx * 0.92 + (dx / dist) * pull;
-    this.vy = this.vy * 0.92 + (dy / dist) * pull;
+    const pull = magnetActive ? 1.65 : dist < 450 ? 0.9 : 0.45;
+    this.vx = this.vx * 0.9 + (dx / dist) * pull;
+    this.vy = this.vy * 0.9 + (dy / dist) * pull;
     this.x += this.vx;
     this.y += this.vy;
     this.rot += this.vRot;

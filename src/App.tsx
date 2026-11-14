@@ -6,11 +6,13 @@ import {
   Crosshair,
   Flame,
   Heart,
+  Magnet,
   Pause,
   Play,
   Rocket,
   RotateCcw,
   Shield,
+  Skull,
   Sliders,
   Sparkles,
   Trophy,
@@ -41,14 +43,23 @@ import {
   Bullet,
   ChickenEnemy,
   EggProjectile,
+  FireMeteorObstacle,
   MeteorObstacle,
   PlayerShip,
 } from './utils/actors';
 import { HangarModal, ShipPreviewCanvas } from './components/HangarModal';
 
 const STORAGE_KEY_HIGH_SCORE = 'space_chicken_highscore_v2';
-const MAX_LEVEL = 10;
+const MAX_LEVEL = 20;
 const MAX_LIVES = 3;
+
+// Số lượng địch cần tiêu diệt mỗi màn để gọi Trùm (Level 1: 30, Level 10: 150, Level 20: 300)
+function getKillTargetForLevel(level: number): number {
+  if (level <= 10) {
+    return Math.round(30 + ((level - 1) / 9) * 120);
+  }
+  return Math.round(150 + ((level - 10) / 10) * 150);
+}
 
 export default function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -69,14 +80,18 @@ export default function App() {
     hp: 100,
     maxHp: 100,
     shield: false,
+    magnetSec: 0,
     weaponTier: 1,
     shipId: 'falcon' as ShipId,
     ammoId: 'laser' as AmmoId,
     bossActive: false,
+    bossEnraged: false,
+    bossIsMega: false,
     bossHp: 0,
     bossMaxHp: 100,
-    waveProgress: 0,
-    waveTarget: 350,
+    levelKills: 0,
+    levelKillTarget: getKillTargetForLevel(1),
+    totalKills: 0,
   });
 
   const engineRef = useRef<{
@@ -85,7 +100,8 @@ export default function App() {
     highScore: number;
     level: number;
     lives: number;
-    levelBaseScore: number;
+    levelKills: number;
+    totalKills: number;
     selectedShip: ShipId;
     selectedAmmo: AmmoId;
     configuredTier: number;
@@ -94,6 +110,7 @@ export default function App() {
     eggs: EggProjectile[];
     chickens: ChickenEnemy[];
     meteors: MeteorObstacle[];
+    fireMeteors: FireMeteorObstacle[];
     particles: RichParticle[];
     rings: ShockwaveRing[];
     drops: DropItem[];
@@ -112,6 +129,8 @@ export default function App() {
     shakeMag: number;
     levelBannerTimer: number;
     bossRewardBannerTimer: number;
+    bossAlertFlashTimer: number;
+    bombFlashTimer: number;
     fireworkTimer: number;
     animId: number;
   }>({
@@ -120,7 +139,8 @@ export default function App() {
     highScore: 0,
     level: 1,
     lives: MAX_LIVES,
-    levelBaseScore: 0,
+    levelKills: 0,
+    totalKills: 0,
     selectedShip: 'falcon',
     selectedAmmo: 'laser',
     configuredTier: 1,
@@ -129,6 +149,7 @@ export default function App() {
     eggs: [],
     chickens: [],
     meteors: [],
+    fireMeteors: [],
     particles: [],
     rings: [],
     drops: [],
@@ -147,6 +168,8 @@ export default function App() {
     shakeMag: 0,
     levelBannerTimer: 0,
     bossRewardBannerTimer: 0,
+    bossAlertFlashTimer: 0,
+    bombFlashTimer: 0,
     fireworkTimer: 0,
     animId: 0,
   });
@@ -161,8 +184,7 @@ export default function App() {
   const syncHudState = () => {
     const eng = engineRef.current;
     const p = eng.player;
-    const waveThreshold = 320 + eng.level * 130;
-    const currentProgress = Math.max(0, eng.score - eng.levelBaseScore);
+    const killTarget = getKillTargetForLevel(eng.level);
 
     if (eng.score > eng.highScore) {
       eng.highScore = eng.score;
@@ -177,14 +199,18 @@ export default function App() {
       hp: p ? Math.max(0, Math.round(p.hp)) : SHIPS[eng.selectedShip].maxHp,
       maxHp: p ? p.maxHp : SHIPS[eng.selectedShip].maxHp,
       shield: p ? p.shield : eng.selectedShip === 'titan',
+      magnetSec: p ? p.getMagnetRemainingSec() : 0,
       weaponTier: p ? p.weaponTier : eng.configuredTier,
       shipId: p ? p.shipId : eng.selectedShip,
       ammoId: p ? p.ammoId : eng.selectedAmmo,
       bossActive: Boolean(eng.boss),
+      bossEnraged: Boolean(eng.boss?.enraged),
+      bossIsMega: Boolean(eng.boss?.isMegaBoss),
       bossHp: eng.boss ? Math.max(0, Math.round(eng.boss.hp)) : 0,
       bossMaxHp: eng.boss ? eng.boss.maxHp : 100,
-      waveProgress: Math.min(waveThreshold, currentProgress),
-      waveTarget: waveThreshold,
+      levelKills: Math.min(killTarget, eng.levelKills),
+      levelKillTarget: killTarget,
+      totalKills: eng.totalKills,
     });
   };
 
@@ -276,9 +302,9 @@ export default function App() {
     const palette = ['#22d3ee', '#facc15', '#f472b6', '#4ade80', '#a78bfa', '#fb923c'];
     const color = palette[Math.floor(Math.random() * palette.length)];
 
-    eng.rings.push(new ShockwaveRing(fx, fy, color, 110));
-    spawnParticles(fx, fy, color, 28, 'spark');
-    for (let i = 0; i < 18; i++) {
+    eng.rings.push(new ShockwaveRing(fx, fy, color, 120));
+    spawnParticles(fx, fy, color, 32, 'spark');
+    for (let i = 0; i < 20; i++) {
       const cColor = palette[Math.floor(Math.random() * palette.length)];
       eng.particles.push(new RichParticle(fx, fy, cColor, 'confetti'));
     }
@@ -293,11 +319,13 @@ export default function App() {
     eng.score = 0;
     eng.level = 1;
     eng.lives = MAX_LIVES;
-    eng.levelBaseScore = 0;
+    eng.levelKills = 0;
+    eng.totalKills = 0;
     eng.bullets = [];
     eng.eggs = [];
     eng.chickens = [];
     eng.meteors = [];
+    eng.fireMeteors = [];
     eng.particles = [];
     eng.rings = [];
     eng.drops = [];
@@ -308,6 +336,8 @@ export default function App() {
     eng.manualShotQueued = false;
     eng.levelBannerTimer = 110;
     eng.bossRewardBannerTimer = 0;
+    eng.bossAlertFlashTimer = 0;
+    eng.bombFlashTimer = 0;
     eng.fireworkTimer = 0;
 
     eng.player = new PlayerShip(
@@ -335,7 +365,8 @@ export default function App() {
     eng.score = 0;
     eng.level = 1;
     eng.lives = MAX_LIVES;
-    eng.levelBaseScore = 0;
+    eng.levelKills = 0;
+    eng.totalKills = 0;
     eng.configuredTier = 1;
     setWeaponTier(1);
 
@@ -345,6 +376,7 @@ export default function App() {
     eng.eggs = [];
     eng.chickens = [];
     eng.meteors = [];
+    eng.fireMeteors = [];
     eng.particles = [];
     eng.rings = [];
     eng.drops = [];
@@ -354,6 +386,8 @@ export default function App() {
     eng.manualShotQueued = false;
     eng.levelBannerTimer = 0;
     eng.bossRewardBannerTimer = 0;
+    eng.bossAlertFlashTimer = 0;
+    eng.bombFlashTimer = 0;
     eng.fireworkTimer = 0;
 
     eng.state = 'START';
@@ -496,7 +530,6 @@ export default function App() {
 
       if (p.hp <= 0) {
         if (eng.lives > 1) {
-          // Trừ 1 mạng, reset đạn về Cấp 1, hồi đầy 100% HP và bất tử nhấp nháy trong 2 giây
           eng.lives -= 1;
           p.hp = p.maxHp;
           p.weaponTier = 1;
@@ -518,7 +551,6 @@ export default function App() {
             new FloatingText(p.x, p.y - 24, 'HẠ ĐẠN VỀ CẤP 1 · BẤT TỬ 2 GIÂY!', '#38bdf8')
           );
         } else {
-          // Hết toàn bộ 3 mạng (Mạng = 0) -> Kích hoạt Game Over
           eng.lives = 0;
           p.hp = 0;
           p.weaponTier = 1;
@@ -533,39 +565,141 @@ export default function App() {
       syncHudState();
     };
 
-    const triggerBossDefeatRewards = (bx: number, by: number) => {
+    const triggerBossDefeatRewards = (bx: number, by: number, defeatedLevel: number) => {
       const p = eng.player;
       if (!p) return;
 
-      // 1. Mưa ngôi sao điểm thưởng (★) tự động hút về máy bay
-      const starCount = 20 + eng.level * 2;
+      // Rơi lượng lớn Điểm sao (★) cực kỳ thỏa mãn
+      const starCount = 36 + defeatedLevel * 3;
       for (let i = 0; i < starCount; i++) {
-        eng.bonusStars.push(new BonusStarItem(bx, by, 50 + eng.level * 10));
+        eng.bonusStars.push(new BonusStarItem(bx, by, 60 + defeatedLevel * 12));
       }
 
-      // 2. Tự động nâng +1 Cấp Đạn
+      // Tự động nâng +1 Cấp Đạn
       const nextTier = Math.min(10, p.weaponTier + 1);
       p.weaponTier = nextTier;
       eng.configuredTier = nextTier;
       setWeaponTier(nextTier);
 
-      // 3. Kích hoạt Lá Chắn Bảo Vệ
+      // Kích hoạt Lá Chắn Bảo Vệ
       p.shield = true;
 
-      // 4. Hồi phục ngay +40% HP tối đa
+      // Hồi phục ngay +40% HP tối đa
       const healAmount = Math.round(p.maxHp * 0.4);
       p.hp = Math.min(p.maxHp, p.hp + healAmount);
 
       soundFX.playBossDefeatedFanfare();
-      eng.bossRewardBannerTimer = 145;
+      eng.bossRewardBannerTimer = 150;
 
       eng.floatTexts.push(
-        new FloatingText(p.x, p.y - 48, `PHẦN THƯỞNG DIỆT TRÙM: +1 CẤP ĐẠN!`, '#facc15')
+        new FloatingText(
+          p.x,
+          p.y - 48,
+          `DIỆT TRÙM MÀN ${defeatedLevel}: MƯA SAO ★ +1 CẤP ĐẠN!`,
+          '#facc15'
+        )
       );
       eng.floatTexts.push(
         new FloatingText(p.x, p.y - 28, `BẬT LÁ CHẮN & HỒI +${healAmount} HP!`, '#4ade80')
       );
     };
+
+    // Kích hoạt Bom Phản Lực (B): Quét sạch đạn địch & gà con, trừ máu lớn của Trùm
+    const triggerJetBombBlast = (w: number, h: number) => {
+      const p = eng.player;
+      if (!p) return;
+
+      triggerShake(26, 14);
+      eng.bombFlashTimer = 28;
+      eng.rings.push(new ShockwaveRing(p.x, p.y, '#f97316', Math.max(w, h) * 0.9));
+      eng.rings.push(new ShockwaveRing(p.x, p.y, '#fde047', Math.max(w, h) * 0.65));
+
+      // Quét sạch toàn bộ trứng/đạn của địch
+      eng.eggs.forEach((eg) => {
+        spawnParticles(eg.x, eg.y, '#fde08a', 3, 'spark');
+      });
+      eng.eggs = [];
+
+      // Quét sạch toàn bộ gà địch trên màn hình
+      let clearedCount = 0;
+      eng.chickens.forEach((c) => {
+        spawnParticles(c.x, c.y, c.bodyColor, 10, 'feather');
+        eng.score += c.scoreValue;
+        clearedCount++;
+      });
+      eng.chickens = [];
+
+      // Phá hủy thiên thạch thường
+      eng.meteors.forEach((m) => {
+        spawnParticles(m.x, m.y, '#94a3b8', 10, 'rock');
+        eng.score += 30 + eng.level * 5;
+        clearedCount++;
+      });
+      eng.meteors = [];
+
+      if (clearedCount > 0) {
+        eng.levelKills += clearedCount;
+        eng.totalKills += clearedCount;
+      }
+
+      // Trừ Trùm một lượng máu lớn (không giết ngay lập tức trừ khi máu Trùm đã cạn)
+      if (eng.boss) {
+        const bombBossDmg = Math.max(220, Math.round(eng.boss.maxHp * 0.22));
+        eng.boss.hp = Math.max(15, eng.boss.hp - bombBossDmg);
+        spawnParticles(eng.boss.x, eng.boss.y, '#f97316', 32, 'spark');
+        eng.floatTexts.push(
+          new FloatingText(
+            eng.boss.x,
+            eng.boss.y - 40,
+            `BOM PHẢN LỰC: -${bombBossDmg} HP TRÙM!`,
+            '#f97316'
+          )
+        );
+      }
+
+      eng.floatTexts.push(
+        new FloatingText(p.x, p.y - 38, 'BOM PHẢN LỰC: QUÉT SẠCH CHIẾN TRƯỜNG!', '#f97316')
+      );
+      syncHudState();
+    };
+
+    const handleBossDefeated = (w: number, h: number) => {
+      if (!eng.boss) return;
+      const bx = eng.boss.x;
+      const by = eng.boss.y;
+      const defeatedLevel = eng.level;
+
+      eng.rings.push(new ShockwaveRing(bx, by, '#facc15', 180));
+      eng.rings.push(new ShockwaveRing(bx, by, '#ef4444', 135));
+      spawnParticles(bx, by, '#facc15', 55, 'feather');
+      spawnParticles(bx, by, '#ef4444', 55, 'spark');
+      triggerShake(26, 13);
+
+      eng.totalKills += 1;
+      eng.score += (defeatedLevel === 10 || defeatedLevel === 20 ? 1200 : 450) * defeatedLevel;
+      eng.boss = null;
+
+      // Xóa đạn trứng còn sót lại khi Trùm nổ
+      eng.eggs = [];
+
+      if (defeatedLevel >= MAX_LEVEL) {
+        triggerBossDefeatRewards(bx, by, defeatedLevel);
+        soundFX.playVictoryFanfare();
+        spawnCelebrationFirework(w, h);
+        spawnCelebrationFirework(w, h);
+        spawnCelebrationFirework(w, h);
+        eng.state = 'VICTORY';
+        setGameState('VICTORY');
+      } else {
+        eng.level += 1;
+        eng.levelKills = 0;
+        eng.levelBannerTimer = 125;
+        triggerBossDefeatRewards(bx, by, defeatedLevel);
+      }
+      syncHudState();
+    };
+
+    let hudTick = 0;
 
     const renderLoop = (now: number) => {
       const w = cvs.width;
@@ -603,7 +737,7 @@ export default function App() {
 
       eng.stars.forEach((st) => {
         if (eng.state === 'PLAYING' || eng.state === 'VICTORY') {
-          st.y += st.v * (1 + (eng.level - 1) * 0.08);
+          st.y += st.v * (1 + (eng.level - 1) * 0.06);
           if (st.y > h) {
             st.y = 0;
             st.x = Math.random() * w;
@@ -613,18 +747,18 @@ export default function App() {
         ctx.fillRect(st.x, st.y, st.s, st.s);
       });
 
-      // Continuous Fireworks & Confetti Rain when VICTORY
+      // Continuous Fireworks & Confetti Rain when VICTORY (PHÁ ĐẢO VŨ TRỤ)
       if (eng.state === 'VICTORY') {
         eng.fireworkTimer++;
-        if (eng.fireworkTimer % 28 === 0) {
+        if (eng.fireworkTimer % 22 === 0) {
           spawnCelebrationFirework(w, h);
         }
-        if (eng.fireworkTimer % 5 === 0) {
+        if (eng.fireworkTimer % 4 === 0) {
           const palette = ['#22d3ee', '#facc15', '#f472b6', '#4ade80', '#a78bfa'];
           const c = palette[Math.floor(Math.random() * palette.length)];
           const conf = new RichParticle(Math.random() * w, -10, c, 'confetti');
-          conf.vx = (Math.random() - 0.5) * 2.5;
-          conf.vy = Math.random() * 2.5 + 1.8;
+          conf.vx = (Math.random() - 0.5) * 2.8;
+          conf.vy = Math.random() * 2.8 + 1.8;
           eng.particles.push(conf);
         }
 
@@ -645,6 +779,12 @@ export default function App() {
 
       if (eng.state === 'PLAYING' && eng.player) {
         const p = eng.player;
+        const magnetActive = p.isMagnetActive();
+
+        hudTick++;
+        if (hudTick % 15 === 0) {
+          syncHudState();
+        }
 
         // Movement
         if (eng.keys['ArrowLeft'] || eng.keys['KeyA']) p.x -= p.speed;
@@ -660,23 +800,26 @@ export default function App() {
         p.x = Math.max(p.radius + 10, Math.min(w - p.radius - 10, p.x));
         p.y = Math.max(p.radius + 64, Math.min(h - p.radius - 28, p.y));
 
-        // Bắn đạn thủ công (Phím Space / Nhấp chuột trái / Chạm màn hình) với giới hạn tốc độ bắn của từng Chiến Cơ
+        // Bắn đạn thủ công (Phím Space / Nhấp chuột trái / Chạm màn hình)
         if (eng.keys['Space'] || eng.isFiringPointer || eng.manualShotQueued) {
           p.shoot(now, eng.bullets);
           eng.manualShotQueued = false;
         }
         p.draw(ctx);
 
-        // Wave & Boss Spawning
-        const waveThreshold = 320 + eng.level * 130;
-        if (!eng.boss && eng.score - eng.levelBaseScore >= waveThreshold) {
+        // Kiểm tra Thanh Tiến Độ Gọi Trùm (theo số lượng địch đã tiêu diệt)
+        const killTarget = getKillTargetForLevel(eng.level);
+        if (!eng.boss && eng.levelKills >= killTarget) {
           eng.boss = new BossChicken(w, eng.level);
+          eng.bossAlertFlashTimer = 105;
           soundFX.playBossAlert();
           eng.floatTexts.push(
             new FloatingText(
               w / 2,
-              150,
-              `CẢNH BÁO: TRÙM GÀ CHÚA CẤP ${eng.level} XUẤT HIỆN!`,
+              155,
+              eng.boss.isMegaBoss
+                ? `⚠ BOSS SIÊU CẤP MÀN ${eng.level} LÊN SÀN! (MÁU X3 · KÍCH THƯỚC +30%) ⚠`
+                : `⚠ CẢNH BÁO: BOSS LÊN SÀN (CẤP ${eng.level})! ⚠`,
               '#ef4444'
             )
           );
@@ -684,8 +827,8 @@ export default function App() {
         }
 
         if (!eng.boss) {
-          const chickenRate = 0.016 + eng.level * 0.0028;
-          const meteorRate = 0.0055 + eng.level * 0.0014;
+          const chickenRate = 0.022 + eng.level * 0.0028;
+          const meteorRate = 0.0065 + eng.level * 0.0012;
           if (Math.random() < chickenRate) {
             eng.chickens.push(new ChickenEnemy(w, eng.level));
           }
@@ -693,11 +836,33 @@ export default function App() {
             eng.meteors.push(new MeteorObstacle(w, eng.level));
           }
         } else {
-          eng.boss.update(w, eng.eggs);
+          const wasEnraged = eng.boss.enraged;
+          eng.boss.update(w, h, eng.eggs, p.x, p.y);
+          if (!wasEnraged && eng.boss.enraged) {
+            eng.bossAlertFlashTimer = 75;
+            soundFX.playBossAlert();
+            eng.floatTexts.push(
+              new FloatingText(
+                eng.boss.x,
+                eng.boss.y - 60,
+                '🔥 TRÙM NỔI ĐIÊN: MƯA ĐẠN TỎA TRÒN & ĐỘT KÍCH! 🔥',
+                '#f97316'
+              )
+            );
+            syncHudState();
+          }
           eng.boss.draw(ctx);
 
           if (Math.hypot(eng.boss.x - p.x, eng.boss.y - p.y) < eng.boss.radius + p.radius - 8) {
             handlePlayerDamage(32);
+          }
+        }
+
+        // Mưa Thiên Thạch Lửa (Từ Level 11 trở đi): Bay chéo tốc độ cao, không thể bắn vỡ
+        if (eng.level >= 11) {
+          const fireMeteorChance = 0.0032 + (eng.level - 10) * 0.00055;
+          if (Math.random() < fireMeteorChance) {
+            eng.fireMeteors.push(new FireMeteorObstacle(w, eng.level));
           }
         }
 
@@ -713,6 +878,19 @@ export default function App() {
           }
 
           let removed = false;
+
+          // Va chạm với Thiên Thạch Lửa (Không thể bắn vỡ!)
+          for (let fmIdx = 0; fmIdx < eng.fireMeteors.length; fmIdx++) {
+            const fm = eng.fireMeteors[fmIdx];
+            if (Math.hypot(b.x - fm.x, b.y - fm.y) < fm.radius + b.radius) {
+              spawnParticles(b.x, b.y, '#fb923c', 4, 'spark');
+              eng.bullets.splice(i, 1);
+              removed = true;
+              break;
+            }
+          }
+
+          if (removed) continue;
 
           // Hit Boss
           if (eng.boss && !b.hitIds.has(eng.boss.id)) {
@@ -730,32 +908,10 @@ export default function App() {
               }
 
               if (eng.boss.hp <= 0) {
-                const bx = eng.boss.x;
-                const by = eng.boss.y;
-                eng.rings.push(new ShockwaveRing(bx, by, '#facc15', 165));
-                eng.rings.push(new ShockwaveRing(bx, by, '#ef4444', 120));
-                spawnParticles(bx, by, '#facc15', 45, 'feather');
-                spawnParticles(bx, by, '#ef4444', 45, 'spark');
-                triggerShake(24, 12);
-
-                eng.score += 350 * eng.level;
-                eng.boss = null;
-
-                if (eng.level >= MAX_LEVEL) {
-                  triggerBossDefeatRewards(bx, by);
-                  soundFX.playVictoryFanfare();
-                  spawnCelebrationFirework(w, h);
-                  spawnCelebrationFirework(w, h);
-                  eng.state = 'VICTORY';
-                  setGameState('VICTORY');
-                } else {
-                  eng.level += 1;
-                  eng.levelBaseScore = eng.score;
-                  eng.levelBannerTimer = 120;
-                  triggerBossDefeatRewards(bx, by);
-                }
+                handleBossDefeated(w, h);
+              } else {
+                syncHudState();
               }
-              syncHudState();
             }
           }
 
@@ -777,8 +933,28 @@ export default function App() {
                 eng.rings.push(new ShockwaveRing(c.x, c.y, c.bodyColor, 46));
                 spawnParticles(c.x, c.y, c.bodyColor, 14, 'feather');
                 eng.score += c.scoreValue;
+                eng.levelKills += 1;
+                eng.totalKills += 1;
 
-                const dropChance = c.variant === 'armored' ? 0.35 : c.variant === 'sniper' ? 0.28 : 0.16;
+                // Gà Phân Bào (splitter): Khi chết tách làm 2 con gà con bay chéo sang 2 bên
+                if (c.variant === 'splitter') {
+                  eng.chickens.push(
+                    new ChickenEnemy(w, eng.level, 'mini_split', c.x - 14, c.y, -3.5)
+                  );
+                  eng.chickens.push(
+                    new ChickenEnemy(w, eng.level, 'mini_split', c.x + 14, c.y, 3.5)
+                  );
+                  eng.floatTexts.push(
+                    new FloatingText(c.x, c.y - 18, 'PHÂN BÀO X2!', '#f59e0b')
+                  );
+                }
+
+                const dropChance =
+                  c.variant === 'armored' || c.variant === 'splitter'
+                    ? 0.34
+                    : c.variant === 'sniper' || c.variant === 'kamikaze'
+                      ? 0.26
+                      : 0.16;
                 if (Math.random() < dropChance) {
                   eng.drops.push(new DropItem(c.x, c.y));
                 }
@@ -814,6 +990,8 @@ export default function App() {
                 eng.rings.push(new ShockwaveRing(m.x, m.y, '#94a3b8', 54));
                 spawnParticles(m.x, m.y, '#94a3b8', 16, 'rock');
                 eng.score += 30 + eng.level * 5;
+                eng.levelKills += 1;
+                eng.totalKills += 1;
                 if (Math.random() < 0.24) {
                   eng.drops.push(new DropItem(m.x, m.y));
                 }
@@ -834,17 +1012,19 @@ export default function App() {
         // Update Chickens
         for (let i = eng.chickens.length - 1; i >= 0; i--) {
           const c = eng.chickens[i];
-          c.update(w, eng.eggs, eng.level);
+          c.update(w, eng.eggs, eng.level, p.x, p.y);
           c.draw(ctx);
 
           if (Math.hypot(c.x - p.x, c.y - p.y) < c.radius + p.radius - 4) {
             spawnParticles(c.x, c.y, c.bodyColor, 14, 'feather');
             eng.chickens.splice(i, 1);
-            handlePlayerDamage(c.variant === 'armored' ? 28 : 20);
+            handlePlayerDamage(
+              c.variant === 'kamikaze' ? 30 : c.variant === 'armored' ? 28 : 20
+            );
             continue;
           }
 
-          if (c.y > h + 45) {
+          if (c.y > h + 50 || c.x < -60 || c.x > w + 60) {
             eng.chickens.splice(i, 1);
           }
         }
@@ -867,6 +1047,23 @@ export default function App() {
           }
         }
 
+        // Update Fire Meteors (Indestructible diagonal fire meteors)
+        for (let i = eng.fireMeteors.length - 1; i >= 0; i--) {
+          const fm = eng.fireMeteors[i];
+          fm.update();
+          fm.draw(ctx);
+
+          if (Math.hypot(fm.x - p.x, fm.y - p.y) < fm.radius + p.radius - 4) {
+            spawnParticles(p.x, p.y, '#f97316', 22, 'spark');
+            handlePlayerDamage(35);
+            continue;
+          }
+
+          if (fm.y > h + 80 || fm.x < -80 || fm.x > w + 80) {
+            eng.fireMeteors.splice(i, 1);
+          }
+        }
+
         // Update Eggs
         for (let i = eng.eggs.length - 1; i >= 0; i--) {
           const eg = eng.eggs[i];
@@ -880,15 +1077,15 @@ export default function App() {
             continue;
           }
 
-          if (eg.y > h + 30 || eg.x < -30 || eg.x > w + 30) {
+          if (eg.y > h + 30 || eg.y < -30 || eg.x < -30 || eg.x > w + 30) {
             eng.eggs.splice(i, 1);
           }
         }
 
-        // Update Drops
+        // Update Drops (Supports Magnet pull when active)
         for (let i = eng.drops.length - 1; i >= 0; i--) {
           const d = eng.drops[i];
-          d.update();
+          d.update(p.x, p.y, magnetActive);
           d.draw(ctx);
 
           if (Math.hypot(d.x - p.x, d.y - p.y) < d.radius + p.radius) {
@@ -902,9 +1099,9 @@ export default function App() {
                   new FloatingText(p.x, p.y - 26, `NÂNG ĐẠN CẤP ${p.weaponTier}!`, '#facc15')
                 );
               } else {
-                eng.score += 120;
+                eng.score += 150;
                 eng.floatTexts.push(
-                  new FloatingText(p.x, p.y - 26, 'ĐẠN TỐI ĐA +120 ĐIỂM', '#facc15')
+                  new FloatingText(p.x, p.y - 26, 'ĐẠN TỐI ĐA +150 ĐIỂM', '#facc15')
                 );
               }
             } else if (d.kind === 'HEAL') {
@@ -913,32 +1110,49 @@ export default function App() {
               eng.floatTexts.push(
                 new FloatingText(p.x, p.y - 26, `+${healAmount} HP`, '#22c55e')
               );
-            } else {
+            } else if (d.kind === 'SHIELD') {
               p.shield = true;
               eng.floatTexts.push(new FloatingText(p.x, p.y - 26, 'BẬT LÁ CHẮN!', '#38bdf8'));
+            } else if (d.kind === 'MAGNET') {
+              p.activateMagnet(10000);
+              eng.floatTexts.push(
+                new FloatingText(
+                  p.x,
+                  p.y - 28,
+                  'NAM CHÂM (10 GIÂY): HÚT MỌI VẬT PHẨM & SAO!',
+                  '#e879f9'
+                )
+              );
+            } else if (d.kind === 'BOMB') {
+              triggerJetBombBlast(w, h);
             }
             eng.drops.splice(i, 1);
             syncHudState();
             continue;
           }
 
-          if (d.y > h + 30) {
+          if (d.y > h + 40) {
             eng.drops.splice(i, 1);
           }
         }
 
-        // Update Magnetized Bonus Stars (★) from Boss Defeat
+        // Update Magnetized Bonus Stars (★)
         for (let i = eng.bonusStars.length - 1; i >= 0; i--) {
           const st = eng.bonusStars[i];
-          st.update(p.x, p.y);
+          st.update(p.x, p.y, magnetActive);
           st.draw(ctx);
 
-          if (Math.hypot(st.x - p.x, st.y - p.y) < st.radius + p.radius + 6) {
+          if (Math.hypot(st.x - p.x, st.y - p.y) < st.radius + p.radius + 8) {
             eng.score += st.points;
             soundFX.playStarCollect();
             spawnParticles(st.x, st.y, '#fde047', 6, 'spark');
             eng.floatTexts.push(
-              new FloatingText(p.x + (Math.random() - 0.5) * 30, p.y - 24, `+${st.points} ★`, '#fde047')
+              new FloatingText(
+                p.x + (Math.random() - 0.5) * 30,
+                p.y - 24,
+                `+${st.points} ★`,
+                '#fde047'
+              )
             );
             eng.bonusStars.splice(i, 1);
             syncHudState();
@@ -967,6 +1181,40 @@ export default function App() {
           if (ft.alpha <= 0) eng.floatTexts.splice(i, 1);
         }
 
+        // Hiệu ứng chớp sáng khi nổ Bom Phản Lực
+        if (eng.bombFlashTimer > 0) {
+          eng.bombFlashTimer--;
+          ctx.save();
+          ctx.fillStyle = `rgba(251, 146, 60, ${(eng.bombFlashTimer / 28) * 0.35})`;
+          ctx.fillRect(0, 0, w, h);
+          ctx.restore();
+        }
+
+        // Cảnh báo chớp đỏ màn hình "BOSS LÊN SÀN"
+        if (eng.bossAlertFlashTimer > 0) {
+          eng.bossAlertFlashTimer--;
+          const pulse = Math.abs(Math.sin(eng.bossAlertFlashTimer * 0.22));
+          ctx.save();
+          ctx.fillStyle = `rgba(220, 38, 38, ${pulse * 0.24})`;
+          ctx.fillRect(0, 0, w, h);
+
+          ctx.font = '900 34px "Chakra Petch", sans-serif';
+          ctx.fillStyle = '#fecaca';
+          ctx.textAlign = 'center';
+          ctx.shadowBlur = 22;
+          ctx.shadowColor = '#ef4444';
+          ctx.fillText(
+            eng.boss?.enraged
+              ? '🔥 TRÙM BỐC CHÁY GIAI ĐOẠN 2: MƯA ĐẠN TỎA TRÒN! 🔥'
+              : eng.boss?.isMegaBoss
+                ? `⚠ BOSS SIÊU CẤP MÀN ${eng.level} LÊN SÀN! ⚠`
+                : '⚠ CẢNH BÁO: BOSS LÊN SÀN! ⚠',
+            w / 2,
+            h * 0.28
+          );
+          ctx.restore();
+        }
+
         // Level Banner Overlay
         if (eng.levelBannerTimer > 0) {
           eng.levelBannerTimer--;
@@ -977,15 +1225,15 @@ export default function App() {
           ctx.textAlign = 'center';
           ctx.shadowBlur = 18;
           ctx.shadowColor = '#0284c7';
-          ctx.fillText(`CẤP ĐỘ ${eng.level} / ${MAX_LEVEL}`, w / 2, h * 0.34);
+          ctx.fillText(`CẤP ĐỘ ${eng.level} / ${MAX_LEVEL}`, w / 2, h * 0.36);
           ctx.font = '700 15px "Be Vietnam Pro", sans-serif';
           ctx.fillStyle = '#e2e8f0';
           ctx.fillText(
-            eng.level >= 3
-              ? 'Cảnh giác: Gà Giáp Thép & Gà Xạ Thủ bắn trứng 3 tia đã tham chiến!'
-              : 'Tiêu diệt đội hình gà xâm lược để triệu hồi Trùm Gà Chúa!',
+            eng.level >= 11
+              ? `Diệt ${getKillTargetForLevel(eng.level)} địch để gọi Trùm · Cảnh giác Gà Cảm Tử, Gà Phân Bào & Thiên Thạch Lửa!`
+              : `Tiêu diệt đủ ${getKillTargetForLevel(eng.level)} quân địch để triệu hồi Trùm Gà Chúa!`,
             w / 2,
-            h * 0.34 + 32
+            h * 0.36 + 32
           );
           ctx.restore();
         }
@@ -1003,7 +1251,7 @@ export default function App() {
           ctx.fillText(
             '★ THƯỞNG DIỆT TRÙM: MƯA SAO ĐIỂM THƯỞNG · +1 CẤP ĐẠN · BẬT LÁ CHẮN · +40% HP ★',
             w / 2,
-            h * 0.24
+            h * 0.22
           );
           ctx.restore();
         }
@@ -1012,6 +1260,7 @@ export default function App() {
         eng.boss?.draw(ctx);
         eng.chickens.forEach((c) => c.draw(ctx));
         eng.meteors.forEach((m) => m.draw(ctx));
+        eng.fireMeteors.forEach((fm) => fm.draw(ctx));
         eng.bullets.forEach((b) => b.draw(ctx));
         eng.eggs.forEach((e) => e.draw(ctx));
         eng.drops.forEach((d) => d.draw(ctx));
@@ -1041,7 +1290,6 @@ export default function App() {
     eng.pointerX = e.clientX - rect.left;
     eng.pointerY = e.clientY - rect.top;
 
-    // Nhấp chuột trái trên PC hoặc Chạm (Tap) trên Điện thoại/Máy tính bảng để bắn đạn
     if (e.pointerType !== 'mouse' || e.button === 0) {
       eng.isFiringPointer = true;
       if (eng.state === 'PLAYING') {
@@ -1077,7 +1325,10 @@ export default function App() {
 
   const hpPercent = Math.max(0, Math.min(100, (hud.hp / Math.max(1, hud.maxHp)) * 100));
   const bossPercent = Math.max(0, Math.min(100, (hud.bossHp / Math.max(1, hud.bossMaxHp)) * 100));
-  const wavePercent = Math.max(0, Math.min(100, (hud.waveProgress / Math.max(1, hud.waveTarget)) * 100));
+  const killProgressPercent = Math.max(
+    0,
+    Math.min(100, (hud.levelKills / Math.max(1, hud.levelKillTarget)) * 100)
+  );
 
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-[#030712] text-slate-100 select-none">
@@ -1093,15 +1344,15 @@ export default function App() {
 
       {/* TOP GLASS HUD (Viền trên màn hình) */}
       <header className="fixed top-0 inset-x-0 z-20 px-3 py-2 bg-slate-950/75 backdrop-blur-md border-b border-cyan-500/25">
-        <div className="max-w-[1800px] mx-auto flex flex-wrap items-center justify-between gap-3">
-          {/* Left: Brand + Player HP + Shield */}
-          <div className="flex flex-wrap items-center gap-3 md:gap-5">
+        <div className="max-w-[1800px] mx-auto flex flex-wrap items-center justify-between gap-2.5">
+          {/* Left: Brand + Player HP + Shield + Magnet + 3 Lives */}
+          <div className="flex flex-wrap items-center gap-2.5 md:gap-4">
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-lg bg-cyan-500/15 border border-cyan-400/40 flex items-center justify-center text-cyan-300">
                 <Rocket className="w-4 h-4" />
               </div>
-              <div className="hidden sm:block">
-                <div className="font-display font-black text-xs md:text-sm tracking-wider uppercase text-white leading-none">
+              <div className="hidden xl:block">
+                <div className="font-display font-black text-xs tracking-wider uppercase text-white leading-none">
                   Chiến Binh Không Gian
                 </div>
                 <div className="text-[11px] text-cyan-300/85 font-medium mt-0.5">
@@ -1110,14 +1361,14 @@ export default function App() {
               </div>
             </div>
 
-            {/* HP Bar */}
+            {/* HP Bar + Shield + Magnet + 3 Lives */}
             <div className="flex items-center gap-2.5 bg-slate-900/85 border border-slate-800 px-3 py-1.5 rounded-xl">
               <Heart className="w-4 h-4 text-rose-400 shrink-0" />
-              <div className="w-28 sm:w-36">
+              <div className="w-24 sm:w-32">
                 <div className="flex items-center justify-between text-[11px] font-bold mb-1">
-                  <span className="text-slate-300">HP Chiến Cơ</span>
+                  <span className="text-slate-300">HP</span>
                   <span className="font-display text-white tabular-nums">
-                    {hud.hp} / {hud.maxHp}
+                    {hud.hp}/{hud.maxHp}
                   </span>
                 </div>
                 <div className="h-2 rounded-full bg-slate-950 overflow-hidden">
@@ -1141,10 +1392,17 @@ export default function App() {
                     : 'bg-slate-950 border-slate-800 text-slate-500'
                 }`}
               >
-                {hud.shield ? 'LÁ CHẮN: BẬT' : 'LÁ CHẮN: TẮT'}
+                {hud.shield ? 'KHIÊN: BẬT' : 'KHIÊN: TẮT'}
               </span>
 
-              {/* 3 Lives Indicator (Hệ thống 3 Mạng trên Glass HUD) */}
+              {hud.magnetSec > 0 && (
+                <span className="text-[11px] font-display font-bold px-2 py-0.5 rounded-md bg-fuchsia-500/20 border border-fuchsia-400/50 text-fuchsia-200 flex items-center gap-1 tabular-nums">
+                  <Magnet className="w-3 h-3 text-fuchsia-300" />
+                  {hud.magnetSec}s
+                </span>
+              )}
+
+              {/* 3 Lives Indicator */}
               <div className="flex items-center gap-1.5 pl-2 border-l border-slate-800">
                 <div className="flex items-center gap-0.5">
                   {[1, 2, 3].map((idx) => (
@@ -1165,15 +1423,19 @@ export default function App() {
             </div>
           </div>
 
-          {/* Center: Level 1-10 + Wave / Boss Progress + Score & High Score */}
-          <div className="flex items-center gap-3 md:gap-5">
-            <div className="bg-slate-900/85 border border-slate-800 px-3 py-1.5 rounded-xl min-w-[165px] sm:min-w-[210px]">
-              <div className="flex items-center justify-between text-[11px] font-bold mb-1">
+          {/* Center: Level 1-20 + Kill-Based Boss Summon Progress Bar + Score & High Score */}
+          <div className="flex items-center gap-2.5 md:gap-4">
+            <div className="bg-slate-900/85 border border-slate-800 px-3 py-1.5 rounded-xl min-w-[195px] sm:min-w-[245px]">
+              <div className="flex items-center justify-between text-[11px] font-bold mb-1 gap-2">
                 <span className="font-display text-cyan-300 uppercase">
-                  Cấp Độ {hud.level} / {MAX_LEVEL}
+                  Cấp {hud.level} / {MAX_LEVEL}
                 </span>
-                <span className="text-slate-400 tabular-nums">
-                  {hud.bossActive ? 'ĐANG ĐẤU TRÙM!' : `Tiến độ Trùm: ${Math.round(wavePercent)}%`}
+                <span className="text-slate-300 font-display tabular-nums">
+                  {hud.bossActive
+                    ? hud.bossEnraged
+                      ? '🔥 BOSS ĐIÊN CUỒNG!'
+                      : '⚠ BOSS LÊN SÀN!'
+                    : `Tiến độ gọi Trùm: ${hud.levelKills}/${hud.levelKillTarget}`}
                 </span>
               </div>
               <div className="h-2 rounded-full bg-slate-950 overflow-hidden">
@@ -1183,12 +1445,12 @@ export default function App() {
                       ? 'bg-gradient-to-r from-rose-500 to-amber-400'
                       : 'bg-gradient-to-r from-cyan-400 to-blue-500'
                   }`}
-                  style={{ width: `${hud.bossActive ? bossPercent : wavePercent}%` }}
+                  style={{ width: `${hud.bossActive ? bossPercent : killProgressPercent}%` }}
                 />
               </div>
             </div>
 
-            <div className="flex items-center gap-4 bg-slate-900/85 border border-slate-800 px-3.5 py-1.5 rounded-xl">
+            <div className="flex items-center gap-3.5 bg-slate-900/85 border border-slate-800 px-3.5 py-1.5 rounded-xl">
               <div>
                 <div className="text-[10px] uppercase tracking-wider text-slate-400">Điểm Số</div>
                 <div className="font-display text-sm md:text-base font-black text-amber-300 tabular-nums leading-tight">
@@ -1207,7 +1469,7 @@ export default function App() {
             </div>
           </div>
 
-          {/* Right: Action Buttons (Tạm dừng, Âm thanh, Cài Đặt & Xưởng) */}
+          {/* Right: Action Buttons */}
           <div className="flex items-center gap-2">
             {(gameState === 'PLAYING' || gameState === 'PAUSED') && (
               <button
@@ -1256,13 +1518,18 @@ export default function App() {
 
         {/* Dedicated Boss Health Bar when Boss is Active */}
         {hud.bossActive && (
-          <div className="max-w-xl mx-auto mt-1.5 px-3 py-1 rounded-lg bg-rose-950/85 border border-rose-500/50 flex items-center gap-3">
+          <div className="max-w-2xl mx-auto mt-1.5 px-3 py-1 rounded-lg bg-rose-950/85 border border-rose-500/50 flex items-center gap-3">
             <span className="font-display text-[11px] font-black uppercase tracking-wider text-rose-200 shrink-0">
-              TRÙM GÀ CHÚA CẤP {hud.level}
+              {hud.bossIsMega ? `★ SIÊU TRÙM CẤP ${hud.level} ★` : `TRÙM GÀ CHÚA CẤP ${hud.level}`}
+              {hud.bossEnraged ? ' · [ĐIÊN CUỒNG]' : ''}
             </span>
             <div className="flex-1 h-2.5 bg-slate-950 rounded-full overflow-hidden">
               <div
-                className="h-full bg-gradient-to-r from-rose-500 via-orange-400 to-yellow-300 transition-all duration-100"
+                className={`h-full transition-all duration-100 ${
+                  hud.bossEnraged
+                    ? 'bg-gradient-to-r from-red-600 via-orange-500 to-yellow-300'
+                    : 'bg-gradient-to-r from-rose-500 via-orange-400 to-yellow-300'
+                }`}
                 style={{ width: `${bossPercent}%` }}
               />
             </div>
@@ -1273,9 +1540,8 @@ export default function App() {
         )}
       </header>
 
-      {/* BOTTOM COLLAPSIBLE QUICK-SWITCH BAR (Thanh chuyển nhanh có nút Thu gọn / Mở rộng) */}
+      {/* BOTTOM COLLAPSIBLE QUICK-SWITCH BAR */}
       <div className="fixed bottom-0 inset-x-0 z-20 flex flex-col items-center pointer-events-none">
-        {/* Collapse / Expand Toggle Button */}
         <button
           type="button"
           onClick={() => setBottomDockCollapsed((prev) => !prev)}
@@ -1322,7 +1588,7 @@ export default function App() {
                 })}
               </div>
 
-              {/* Quick Ammo Switcher (Keys 1-4) */}
+              {/* Quick Ammo Switcher */}
               <div className="flex items-center gap-1.5 flex-wrap">
                 <span className="text-[11px] font-display font-bold uppercase text-slate-400 mr-1 flex items-center gap-1">
                   <Crosshair className="w-3.5 h-3.5 text-amber-400" /> Loại Đạn:
@@ -1353,7 +1619,7 @@ export default function App() {
                 })}
               </div>
 
-              {/* Quick Tier Switcher (1-10) */}
+              {/* Quick Tier Switcher */}
               <div className="flex items-center gap-1 flex-wrap">
                 <span className="text-[11px] font-display font-bold uppercase text-slate-400 mr-1 flex items-center gap-1">
                   <Flame className="w-3.5 h-3.5 text-emerald-400" /> Cấp Đạn:
@@ -1386,13 +1652,13 @@ export default function App() {
         <div className="fixed inset-0 z-30 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-sm">
           <div className="w-full max-w-3xl rounded-2xl bg-slate-900/95 border border-cyan-500/35 p-6 md:p-8 shadow-[0_24px_80px_rgba(0,0,0,0.9)] text-center">
             <div className="text-xs font-display font-bold uppercase tracking-widest text-cyan-300 mb-2">
-              Chiến Trường Không Gian Toàn Màn Hình · 10 Cấp Độ · 4 Chiến Cơ · 4 Hệ Đạn
+              Chiến Dịch 20 Cấp Độ · 3 Mạng · Bắn Thủ Công · Vật Phẩm Nam Châm (M) & Bom Phản Lực (B)
             </div>
             <h1 className="font-display text-3xl sm:text-5xl font-black uppercase tracking-tight text-white mb-3">
               Chiến Binh Không Gian
             </h1>
             <p className="text-slate-300 text-sm sm:text-base max-w-xl mx-auto mb-6">
-              Điều khiển phi thuyền tiêu diệt binh đoàn Gà Giáp Thép, Gà Xạ Thủ và Trùm Gà Chúa Vũ Trụ. Hạ gục Trùm cuối mỗi màn để tắm mưa Sao Điểm Thưởng (★), tự động nâng +1 Cấp Đạn, bật Lá Chắn và hồi 40% HP!
+              Tiêu diệt đủ quân số Gà Vũ Trụ ở mỗi màn để triệu hồi Trùm Gà Chúa! Từ Cấp 11 xuất hiện Gà Cảm Tử, Gà Phân Bào, Mưa Thiên Thạch Lửa và Trùm 2 Giai Đoạn Điên Cuồng.
             </p>
 
             {/* Current Loadout Preview Card */}
@@ -1406,7 +1672,9 @@ export default function App() {
                   <div className="font-display font-bold text-sm text-white">
                     {SHIPS[selectedShip].name}
                   </div>
-                  <div className="text-xs text-cyan-300">{SHIPS[selectedShip].maxHp} HP tối đa</div>
+                  <div className="text-xs text-cyan-300">
+                    {SHIPS[selectedShip].maxHp} HP · ♥ x3 Mạng
+                  </div>
                 </div>
               </div>
 
@@ -1452,7 +1720,7 @@ export default function App() {
         </div>
       )}
 
-      {/* PAUSED OVERLAY (When Hangar modal is closed) */}
+      {/* PAUSED OVERLAY */}
       {gameState === 'PAUSED' && !showHangarModal && (
         <div className="fixed inset-0 z-30 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-sm">
           <div className="w-full max-w-md rounded-2xl bg-slate-900/95 border border-cyan-500/35 p-6 text-center shadow-2xl">
@@ -1494,7 +1762,7 @@ export default function App() {
         <div className="fixed inset-0 z-30 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
           <div className="w-full max-w-lg rounded-2xl bg-slate-900/95 border border-rose-500/40 p-6 md:p-8 text-center shadow-2xl">
             <div className="text-xs font-display font-bold uppercase tracking-widest text-rose-400 mb-1">
-              Đã Mất Hết 3 Mạng (♥ x0) Tại Cấp Độ {hud.level}
+              Đã Mất Hết 3 Mạng (♥ x0) Tại Cấp Độ {hud.level} / {MAX_LEVEL}
             </div>
             <h2 className="font-display text-3xl sm:text-4xl font-black uppercase text-white mb-2">
               Nhiệm Vụ Thất Bại
@@ -1503,16 +1771,22 @@ export default function App() {
               Toàn bộ tiến độ chiến dịch đã được đặt lại về Cấp Độ 1 và Cấp Đạn 1. Điểm kỷ lục cao nhất của bạn vẫn được bảo toàn!
             </p>
 
-            <div className="grid grid-cols-2 gap-3 bg-slate-950/90 border border-slate-800 rounded-xl p-4 mb-6">
+            <div className="grid grid-cols-3 gap-2.5 bg-slate-950/90 border border-slate-800 rounded-xl p-4 mb-6">
               <div>
                 <div className="text-xs text-slate-400">Điểm Trận Này</div>
-                <div className="font-display text-2xl font-black text-amber-300 tabular-nums">
+                <div className="font-display text-xl sm:text-2xl font-black text-amber-300 tabular-nums">
                   {hud.score.toLocaleString('vi-VN')}
                 </div>
               </div>
               <div className="border-l border-slate-800">
+                <div className="text-xs text-slate-400">Địch Đã Diệt</div>
+                <div className="font-display text-xl sm:text-2xl font-black text-rose-300 tabular-nums">
+                  {hud.totalKills.toLocaleString('vi-VN')}
+                </div>
+              </div>
+              <div className="border-l border-slate-800">
                 <div className="text-xs text-slate-400">Kỷ Lục Cao Nhất</div>
-                <div className="font-display text-2xl font-black text-cyan-300 tabular-nums">
+                <div className="font-display text-xl sm:text-2xl font-black text-cyan-300 tabular-nums">
                   {hud.highScore.toLocaleString('vi-VN')}
                 </div>
               </div>
@@ -1540,23 +1814,23 @@ export default function App() {
         </div>
       )}
 
-      {/* 10-LEVEL VICTORY OVERLAY (With Fireworks & Confetti Rain running behind on Canvas) */}
+      {/* 20-LEVEL VICTORY OVERLAY: "PHÁ ĐẢO VŨ TRỤ" */}
       {gameState === 'VICTORY' && !showHangarModal && (
         <div className="fixed inset-0 z-30 flex items-center justify-center p-4 bg-slate-950/55 backdrop-blur-[2px]">
-          <div className="w-full max-w-xl rounded-2xl bg-slate-900/90 border-2 border-amber-400/70 p-6 md:p-8 text-center shadow-[0_0_70px_rgba(250,204,21,0.35)]">
-            <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-amber-400/20 border border-amber-300/50 text-amber-200 font-display text-xs font-bold uppercase tracking-widest mb-3">
+          <div className="w-full max-w-2xl rounded-2xl bg-slate-900/90 border-2 border-amber-400/70 p-6 md:p-8 text-center shadow-[0_0_80px_rgba(250,204,21,0.4)]">
+            <div className="inline-flex items-center gap-2 px-4 py-1 rounded-full bg-amber-400/20 border border-amber-300/50 text-amber-200 font-display text-xs font-bold uppercase tracking-widest mb-3">
               <Sparkles className="w-4 h-4 text-amber-300" />
-              Chiến Thắng Toàn Diện 10 / 10 Cấp Độ
+              Chinh Phục Trọn Vẹn 20 / 20 Cấp Độ Chiến Dịch
             </div>
 
             <h2 className="font-display text-3xl sm:text-5xl font-black uppercase text-transparent bg-clip-text bg-gradient-to-r from-amber-200 via-yellow-300 to-cyan-300 mb-3">
-              Huyền Thoại Ngân Hà!
+              Phá Đảo Vũ Trụ!
             </h2>
             <p className="text-sm sm:text-base text-slate-200 mb-6">
-              Chúc mừng Chỉ Huy! Bạn đã quét sạch toàn bộ 10 cấp độ Gà Vũ Trụ và tiêu diệt Trùm Gà Chúa Tối Thượng trong tiếng pháo hoa tung hô rực rỡ!
+              Chúc mừng Chỉ Huy Tối Cao! Bạn đã vượt qua cả 20 cấp độ khốc liệt, nghiền nát Siêu Trùm Gà Chúa Cấp 20 và giải phóng toàn bộ thiên hà trong đại tiệc pháo hoa rực rỡ!
             </p>
 
-            <div className="grid grid-cols-2 gap-3 bg-slate-950/90 border border-amber-400/30 rounded-xl p-4 mb-6">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-950/90 border border-amber-400/30 rounded-xl p-4 mb-6">
               <div>
                 <div className="text-xs text-slate-400 flex items-center justify-center gap-1">
                   <Award className="w-3.5 h-3.5 text-amber-400" /> Tổng Điểm Chung Cuộc
@@ -1565,7 +1839,15 @@ export default function App() {
                   {hud.score.toLocaleString('vi-VN')}
                 </div>
               </div>
-              <div className="border-l border-slate-800">
+              <div className="border-t sm:border-t-0 sm:border-l border-slate-800 pt-2 sm:pt-0">
+                <div className="text-xs text-slate-400 flex items-center justify-center gap-1">
+                  <Skull className="w-3.5 h-3.5 text-rose-400" /> Tổng Địch Đã Diệt
+                </div>
+                <div className="font-display text-2xl sm:text-3xl font-black text-rose-300 tabular-nums mt-0.5">
+                  {hud.totalKills.toLocaleString('vi-VN')}
+                </div>
+              </div>
+              <div className="border-t sm:border-t-0 sm:border-l border-slate-800 pt-2 sm:pt-0">
                 <div className="text-xs text-slate-400 flex items-center justify-center gap-1">
                   <Trophy className="w-3.5 h-3.5 text-cyan-400" /> Kỷ Lục Lưu Trữ
                 </div>
@@ -1579,15 +1861,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={exitToHangarWithReset}
-                className="flex items-center gap-2 px-7 py-3.5 rounded-xl bg-gradient-to-r from-amber-400 to-yellow-300 hover:from-amber-300 hover:to-yellow-200 text-slate-950 font-display font-black uppercase tracking-wider shadow-[0_0_25px_rgba(250,204,21,0.5)] cursor-pointer"
-              >
-                <Sparkles className="w-4 h-4" />
-                Hoàn Thành Chiến Dịch
-              </button>
-              <button
-                type="button"
-                onClick={exitToHangarWithReset}
-                className="flex items-center gap-2 px-5 py-3.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-cyan-400/40 text-cyan-200 font-display font-bold uppercase tracking-wider cursor-pointer"
+                className="flex items-center gap-2 px-8 py-3.5 rounded-xl bg-gradient-to-r from-amber-400 to-yellow-300 hover:from-amber-300 hover:to-yellow-200 text-slate-950 font-display font-black uppercase tracking-wider shadow-[0_0_25px_rgba(250,204,21,0.5)] cursor-pointer"
               >
                 <RotateCcw className="w-4 h-4" />
                 Chơi Lại Từ Đầu
