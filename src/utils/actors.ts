@@ -125,6 +125,7 @@ export class PlayerShip {
   baseDamage: number;
   thrusterPhase = 0;
   damageFlashUntil = 0;
+  invulnerableUntil = 0;
 
   constructor(w: number, h: number, shipId: ShipId, ammoId: AmmoId, startTier: number) {
     this.x = w / 2;
@@ -154,7 +155,17 @@ export class PlayerShip {
   }
 
   triggerDamageFlash(durationMs = 650) {
-    this.damageFlashUntil = performance.now() + durationMs;
+    this.damageFlashUntil = Math.max(this.damageFlashUntil, performance.now() + durationMs);
+  }
+
+  triggerRespawnInvulnerability(durationMs = 2000) {
+    const until = performance.now() + durationMs;
+    this.invulnerableUntil = until;
+    this.damageFlashUntil = until;
+  }
+
+  isInvulnerable() {
+    return performance.now() < this.invulnerableUntil;
   }
 
   draw(ctx: CanvasRenderingContext2D) {
@@ -164,7 +175,7 @@ export class PlayerShip {
 
     ctx.save();
     if (isFlashing) {
-      // Nhấp nháy thay đổi độ trong suốt liên tục mỗi ~60ms khi nhận sát thương
+      // Nhấp nháy thay đổi độ trong suốt liên tục mỗi ~60ms khi nhận sát thương hoặc đang bất tử tạm thời
       const blinkCycle = Math.floor((this.damageFlashUntil - now) / 60) % 2 === 0;
       ctx.globalAlpha = blinkCycle ? 0.22 : 0.92;
     }

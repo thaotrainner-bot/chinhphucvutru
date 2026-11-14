@@ -82,6 +82,7 @@ interface HangarModalProps {
   onChangeTier: (tier: number) => void;
   onToggleSound: () => void;
   onRestart: () => void;
+  onExitAndReset: () => void;
   onClose: () => void;
 }
 
@@ -96,6 +97,7 @@ export const HangarModal: React.FC<HangarModalProps> = ({
   onChangeTier,
   onToggleSound,
   onRestart,
+  onExitAndReset,
   onClose,
 }) => {
   return (
@@ -109,10 +111,10 @@ export const HangarModal: React.FC<HangarModalProps> = ({
             </div>
             <div>
               <h2 className="font-display text-lg md:text-xl font-black tracking-wider uppercase text-white">
-                Cài Đặt & Xưởng Chiến Cơ
+                Xưởng Chiến Cơ & Vũ Khí
               </h2>
               <p className="text-xs text-slate-400">
-                100% điều khiển bằng nút bấm trực quan · Thay đổi áp dụng ngay lập tức vào chiến trường
+                Thiết lập Chiến Cơ, Loại Đạn và Cấp Đạn · Bắn thủ công bằng Phím Space / Nhấp chuột trái / Chạm màn hình
               </p>
             </div>
           </div>
@@ -330,27 +332,36 @@ export const HangarModal: React.FC<HangarModalProps> = ({
               {isGameActive && (
                 <button
                   type="button"
-                  onClick={() => {
-                    onClose();
-                    onRestart();
-                  }}
+                  onClick={onExitAndReset}
                   className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/40 text-rose-200 font-display font-bold text-xs uppercase tracking-wider transition cursor-pointer"
                 >
                   <RotateCcw className="w-4 h-4" />
-                  Chơi Lại Từ Đầu
+                  Thoát Trận & Reset Từ Đầu
                 </button>
               )}
             </div>
 
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-cyan-400 to-blue-500 hover:from-cyan-300 hover:to-blue-400 text-slate-950 font-display font-black text-xs md:text-sm uppercase tracking-wider shadow-[0_0_25px_rgba(34,211,238,0.4)] transition cursor-pointer"
-            >
-              <Sparkles className="w-4 h-4" />
-              <Zap className="w-4 h-4" />
-              Lưu & Tiếp Tục Chiến Đấu
-            </button>
+            {isGameActive ? (
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-cyan-400 to-blue-500 hover:from-cyan-300 hover:to-blue-400 text-slate-950 font-display font-black text-xs md:text-sm uppercase tracking-wider shadow-[0_0_25px_rgba(34,211,238,0.4)] transition cursor-pointer"
+              >
+                <Sparkles className="w-4 h-4" />
+                <Zap className="w-4 h-4" />
+                Lưu & Tiếp Tục Chiến Đấu
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={onRestart}
+                className="flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-cyan-400 to-blue-500 hover:from-cyan-300 hover:to-blue-400 text-slate-950 font-display font-black text-xs md:text-sm uppercase tracking-wider shadow-[0_0_25px_rgba(34,211,238,0.4)] transition cursor-pointer"
+              >
+                <Sparkles className="w-4 h-4" />
+                <Zap className="w-4 h-4" />
+                Xuất Kích Chiến Đấu (Level 1)
+              </button>
+            )}
           </div>
         </div>
       </div>

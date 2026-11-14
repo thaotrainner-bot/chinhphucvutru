@@ -48,6 +48,7 @@ import { HangarModal, ShipPreviewCanvas } from './components/HangarModal';
 
 const STORAGE_KEY_HIGH_SCORE = 'space_chicken_highscore_v2';
 const MAX_LEVEL = 10;
+const MAX_LIVES = 3;
 
 export default function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -64,6 +65,7 @@ export default function App() {
     score: 0,
     highScore: 0,
     level: 1,
+    lives: MAX_LIVES,
     hp: 100,
     maxHp: 100,
     shield: false,
@@ -82,6 +84,7 @@ export default function App() {
     score: number;
     highScore: number;
     level: number;
+    lives: number;
     levelBaseScore: number;
     selectedShip: ShipId;
     selectedAmmo: AmmoId;
@@ -103,6 +106,8 @@ export default function App() {
     pointerActive: boolean;
     pointerX: number;
     pointerY: number;
+    isFiringPointer: boolean;
+    manualShotQueued: boolean;
     shakeTime: number;
     shakeMag: number;
     levelBannerTimer: number;
@@ -114,6 +119,7 @@ export default function App() {
     score: 0,
     highScore: 0,
     level: 1,
+    lives: MAX_LIVES,
     levelBaseScore: 0,
     selectedShip: 'falcon',
     selectedAmmo: 'laser',
@@ -135,6 +141,8 @@ export default function App() {
     pointerActive: false,
     pointerX: 0,
     pointerY: 0,
+    isFiringPointer: false,
+    manualShotQueued: false,
     shakeTime: 0,
     shakeMag: 0,
     levelBannerTimer: 0,
@@ -165,6 +173,7 @@ export default function App() {
       score: eng.score,
       highScore: eng.highScore,
       level: eng.level,
+      lives: eng.lives,
       hp: p ? Math.max(0, Math.round(p.hp)) : SHIPS[eng.selectedShip].maxHp,
       maxHp: p ? p.maxHp : SHIPS[eng.selectedShip].maxHp,
       shield: p ? p.shield : eng.selectedShip === 'titan',
@@ -283,6 +292,7 @@ export default function App() {
 
     eng.score = 0;
     eng.level = 1;
+    eng.lives = MAX_LIVES;
     eng.levelBaseScore = 0;
     eng.bullets = [];
     eng.eggs = [];
@@ -294,6 +304,8 @@ export default function App() {
     eng.bonusStars = [];
     eng.floatTexts = [];
     eng.boss = null;
+    eng.isFiringPointer = false;
+    eng.manualShotQueued = false;
     eng.levelBannerTimer = 110;
     eng.bossRewardBannerTimer = 0;
     eng.fireworkTimer = 0;
@@ -312,9 +324,49 @@ export default function App() {
     syncHudState();
   };
 
+  // Reset toàn bộ tiến độ ván chơi (Score = 0, Level = 1, Cấp đạn = 1, Mạng = 3), giữ nguyên High Score và mở Xưởng Chiến Cơ
+  const exitToHangarWithReset = () => {
+    const eng = engineRef.current;
+    if (eng.score > eng.highScore) {
+      eng.highScore = eng.score;
+      localStorage.setItem(STORAGE_KEY_HIGH_SCORE, String(eng.highScore));
+    }
+
+    eng.score = 0;
+    eng.level = 1;
+    eng.lives = MAX_LIVES;
+    eng.levelBaseScore = 0;
+    eng.configuredTier = 1;
+    setWeaponTier(1);
+
+    eng.player = null;
+    eng.boss = null;
+    eng.bullets = [];
+    eng.eggs = [];
+    eng.chickens = [];
+    eng.meteors = [];
+    eng.particles = [];
+    eng.rings = [];
+    eng.drops = [];
+    eng.bonusStars = [];
+    eng.floatTexts = [];
+    eng.isFiringPointer = false;
+    eng.manualShotQueued = false;
+    eng.levelBannerTimer = 0;
+    eng.bossRewardBannerTimer = 0;
+    eng.fireworkTimer = 0;
+
+    eng.state = 'START';
+    setGameState('START');
+    syncHudState();
+    setShowHangarModal(true);
+  };
+
   const togglePause = () => {
     const eng = engineRef.current;
     if (eng.state === 'PLAYING') {
+      eng.isFiringPointer = false;
+      eng.manualShotQueued = false;
       eng.state = 'PAUSED';
       setGameState('PAUSED');
     } else if (eng.state === 'PAUSED') {
@@ -327,6 +379,8 @@ export default function App() {
   const openHangarAndSettings = () => {
     const eng = engineRef.current;
     if (eng.state === 'PLAYING') {
+      eng.isFiringPointer = false;
+      eng.manualShotQueued = false;
       eng.state = 'PAUSED';
       setGameState('PAUSED');
     }
@@ -392,6 +446,14 @@ export default function App() {
     window.addEventListener('resize', resize);
 
     const onKeyDown = (e: KeyboardEvent) => {
+      if (e.code === 'Space') {
+        e.preventDefault();
+        eng.keys['Space'] = true;
+        if (eng.state === 'PLAYING') {
+          eng.manualShotQueued = true;
+        }
+        return;
+      }
       eng.keys[e.code] = true;
       if (e.code === 'Digit1') applyAmmoChoice('laser');
       if (e.code === 'Digit2') applyAmmoChoice('plasma');
@@ -413,7 +475,7 @@ export default function App() {
 
     const handlePlayerDamage = (amount: number) => {
       const p = eng.player;
-      if (!p) return;
+      if (!p || p.isInvulnerable()) return;
 
       p.triggerDamageFlash(650);
       triggerShake(14, 8);
@@ -433,11 +495,40 @@ export default function App() {
       eng.floatTexts.push(new FloatingText(p.x, p.y - 20, `-${amount} HP`, '#ef4444'));
 
       if (p.hp <= 0) {
-        p.hp = 0;
-        eng.rings.push(new ShockwaveRing(p.x, p.y, '#f97316', 110));
-        spawnParticles(p.x, p.y, '#f97316', 40, 'spark');
-        eng.state = 'GAMEOVER';
-        setGameState('GAMEOVER');
+        if (eng.lives > 1) {
+          // Trừ 1 mạng, reset đạn về Cấp 1, hồi đầy 100% HP và bất tử nhấp nháy trong 2 giây
+          eng.lives -= 1;
+          p.hp = p.maxHp;
+          p.weaponTier = 1;
+          eng.configuredTier = 1;
+          setWeaponTier(1);
+          p.triggerRespawnInvulnerability(2000);
+
+          eng.rings.push(new ShockwaveRing(p.x, p.y, '#facc15', 95));
+          spawnParticles(p.x, p.y, '#facc15', 28, 'spark');
+          eng.floatTexts.push(
+            new FloatingText(
+              p.x,
+              p.y - 44,
+              `MẤT 1 MẠNG (CÒN ♥ x${eng.lives}) · HỒI 100% HP!`,
+              '#facc15'
+            )
+          );
+          eng.floatTexts.push(
+            new FloatingText(p.x, p.y - 24, 'HẠ ĐẠN VỀ CẤP 1 · BẤT TỬ 2 GIÂY!', '#38bdf8')
+          );
+        } else {
+          // Hết toàn bộ 3 mạng (Mạng = 0) -> Kích hoạt Game Over
+          eng.lives = 0;
+          p.hp = 0;
+          p.weaponTier = 1;
+          eng.configuredTier = 1;
+          setWeaponTier(1);
+          eng.rings.push(new ShockwaveRing(p.x, p.y, '#f97316', 110));
+          spawnParticles(p.x, p.y, '#f97316', 40, 'spark');
+          eng.state = 'GAMEOVER';
+          setGameState('GAMEOVER');
+        }
       }
       syncHudState();
     };
@@ -569,8 +660,11 @@ export default function App() {
         p.x = Math.max(p.radius + 10, Math.min(w - p.radius - 10, p.x));
         p.y = Math.max(p.radius + 64, Math.min(h - p.radius - 28, p.y));
 
-        // Auto-shoot
-        p.shoot(now, eng.bullets);
+        // Bắn đạn thủ công (Phím Space / Nhấp chuột trái / Chạm màn hình) với giới hạn tốc độ bắn của từng Chiến Cơ
+        if (eng.keys['Space'] || eng.isFiringPointer || eng.manualShotQueued) {
+          p.shoot(now, eng.bullets);
+          eng.manualShotQueued = false;
+        }
         p.draw(ctx);
 
         // Wave & Boss Spawning
@@ -942,31 +1036,43 @@ export default function App() {
     const cvs = canvasRef.current;
     if (!cvs) return;
     const rect = cvs.getBoundingClientRect();
-    engineRef.current.pointerActive = true;
-    engineRef.current.pointerX = e.clientX - rect.left;
-    engineRef.current.pointerY = e.clientY - rect.top;
+    const eng = engineRef.current;
+    eng.pointerActive = true;
+    eng.pointerX = e.clientX - rect.left;
+    eng.pointerY = e.clientY - rect.top;
+
+    // Nhấp chuột trái trên PC hoặc Chạm (Tap) trên Điện thoại/Máy tính bảng để bắn đạn
+    if (e.pointerType !== 'mouse' || e.button === 0) {
+      eng.isFiringPointer = true;
+      if (eng.state === 'PLAYING') {
+        eng.manualShotQueued = true;
+      }
+    }
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const eng = engineRef.current;
     if (e.buttons === 0 && e.pointerType === 'mouse') {
+      eng.isFiringPointer = false;
       const cvs = canvasRef.current;
       if (!cvs) return;
       const rect = cvs.getBoundingClientRect();
-      engineRef.current.pointerActive = true;
-      engineRef.current.pointerX = e.clientX - rect.left;
-      engineRef.current.pointerY = e.clientY - rect.top;
+      eng.pointerActive = true;
+      eng.pointerX = e.clientX - rect.left;
+      eng.pointerY = e.clientY - rect.top;
       return;
     }
-    if (!engineRef.current.pointerActive) return;
+    if (!eng.pointerActive) return;
     const cvs = canvasRef.current;
     if (!cvs) return;
     const rect = cvs.getBoundingClientRect();
-    engineRef.current.pointerX = e.clientX - rect.left;
-    engineRef.current.pointerY = e.clientY - rect.top;
+    eng.pointerX = e.clientX - rect.left;
+    eng.pointerY = e.clientY - rect.top;
   };
 
   const handlePointerUp = () => {
     engineRef.current.pointerActive = false;
+    engineRef.current.isFiringPointer = false;
   };
 
   const hpPercent = Math.max(0, Math.min(100, (hud.hp / Math.max(1, hud.maxHp)) * 100));
@@ -1037,6 +1143,25 @@ export default function App() {
               >
                 {hud.shield ? 'LÁ CHẮN: BẬT' : 'LÁ CHẮN: TẮT'}
               </span>
+
+              {/* 3 Lives Indicator (Hệ thống 3 Mạng trên Glass HUD) */}
+              <div className="flex items-center gap-1.5 pl-2 border-l border-slate-800">
+                <div className="flex items-center gap-0.5">
+                  {[1, 2, 3].map((idx) => (
+                    <Heart
+                      key={idx}
+                      className={`w-3.5 h-3.5 transition-all ${
+                        idx <= hud.lives
+                          ? 'text-rose-400 fill-rose-400 drop-shadow-[0_0_6px_rgba(251,113,133,0.6)]'
+                          : 'text-slate-700'
+                      }`}
+                    />
+                  ))}
+                </div>
+                <span className="font-display text-xs font-black text-rose-300 tabular-nums">
+                  ♥ x{hud.lives}
+                </span>
+              </div>
             </div>
           </div>
 
@@ -1335,7 +1460,7 @@ export default function App() {
               Tạm Dừng Chiến Trường
             </h2>
             <p className="text-sm text-slate-300 mb-6">
-              Bạn có thể tiếp tục trận đánh hoặc mở Xưởng Chiến Cơ để đổi phi thuyền, loại đạn và cấp đạn.
+              Tiếp tục trận đánh hiện tại hoặc chọn Thoát / Quay lại Xưởng (tiến độ lượt chơi này sẽ được reset về Level 1, Điểm số về 0).
             </p>
             <div className="flex flex-col gap-2.5">
               <button
@@ -1347,17 +1472,17 @@ export default function App() {
               </button>
               <button
                 type="button"
-                onClick={() => setShowHangarModal(true)}
-                className="w-full py-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-cyan-200 font-display font-bold uppercase tracking-wider cursor-pointer"
+                onClick={exitToHangarWithReset}
+                className="w-full py-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-cyan-400/40 text-cyan-200 font-display font-bold uppercase tracking-wider cursor-pointer"
               >
-                Mở Cài Đặt & Xưởng Chiến Cơ
+                Thoát / Quay Lại Xưởng Chiến Cơ
               </button>
               <button
                 type="button"
                 onClick={startNewGame}
                 className="w-full py-2.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/40 text-rose-200 font-display font-bold text-xs uppercase tracking-wider cursor-pointer"
               >
-                Chơi Lại Từ Đầu
+                Chơi Lại Từ Đầu (Level 1)
               </button>
             </div>
           </div>
@@ -1369,11 +1494,14 @@ export default function App() {
         <div className="fixed inset-0 z-30 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
           <div className="w-full max-w-lg rounded-2xl bg-slate-900/95 border border-rose-500/40 p-6 md:p-8 text-center shadow-2xl">
             <div className="text-xs font-display font-bold uppercase tracking-widest text-rose-400 mb-1">
-              Phi Thuyền Đã Bị Hạ Gục Ở Cấp Độ {hud.level}
+              Đã Mất Hết 3 Mạng (♥ x0) Tại Cấp Độ {hud.level}
             </div>
-            <h2 className="font-display text-3xl sm:text-4xl font-black uppercase text-white mb-4">
+            <h2 className="font-display text-3xl sm:text-4xl font-black uppercase text-white mb-2">
               Nhiệm Vụ Thất Bại
             </h2>
+            <p className="text-xs sm:text-sm text-slate-300 mb-5">
+              Toàn bộ tiến độ chiến dịch đã được đặt lại về Cấp Độ 1 và Cấp Đạn 1. Điểm kỷ lục cao nhất của bạn vẫn được bảo toàn!
+            </p>
 
             <div className="grid grid-cols-2 gap-3 bg-slate-950/90 border border-slate-800 rounded-xl p-4 mb-6">
               <div>
@@ -1397,15 +1525,15 @@ export default function App() {
                 className="flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-rose-500 to-amber-500 hover:from-rose-400 hover:to-amber-400 text-slate-950 font-display font-black uppercase tracking-wider cursor-pointer"
               >
                 <RotateCcw className="w-4 h-4" />
-                Tái Xuất Kích Ngay
+                Chơi Lại Từ Đầu (3 Mạng)
               </button>
               <button
                 type="button"
-                onClick={() => setShowHangarModal(true)}
+                onClick={exitToHangarWithReset}
                 className="flex items-center gap-2 px-5 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-display font-bold uppercase tracking-wider cursor-pointer"
               >
                 <Sliders className="w-4 h-4" />
-                Nâng Cấp Tại Xưởng
+                Quay Lại Xưởng Chiến Cơ
               </button>
             </div>
           </div>
@@ -1450,19 +1578,19 @@ export default function App() {
             <div className="flex flex-wrap items-center justify-center gap-3">
               <button
                 type="button"
-                onClick={startNewGame}
+                onClick={exitToHangarWithReset}
                 className="flex items-center gap-2 px-7 py-3.5 rounded-xl bg-gradient-to-r from-amber-400 to-yellow-300 hover:from-amber-300 hover:to-yellow-200 text-slate-950 font-display font-black uppercase tracking-wider shadow-[0_0_25px_rgba(250,204,21,0.5)] cursor-pointer"
               >
-                <RotateCcw className="w-4 h-4" />
-                Chinh Phục Lại Từ Đầu
+                <Sparkles className="w-4 h-4" />
+                Hoàn Thành Chiến Dịch
               </button>
               <button
                 type="button"
-                onClick={() => setShowHangarModal(true)}
+                onClick={exitToHangarWithReset}
                 className="flex items-center gap-2 px-5 py-3.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-cyan-400/40 text-cyan-200 font-display font-bold uppercase tracking-wider cursor-pointer"
               >
-                <Sliders className="w-4 h-4" />
-                Đổi Chiến Cơ & Đạn
+                <RotateCcw className="w-4 h-4" />
+                Chơi Lại Từ Đầu
               </button>
             </div>
           </div>
@@ -1482,6 +1610,7 @@ export default function App() {
           onChangeTier={applyTierChoice}
           onToggleSound={toggleSound}
           onRestart={startNewGame}
+          onExitAndReset={exitToHangarWithReset}
           onClose={closeHangarAndResume}
         />
       )}
